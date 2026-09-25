@@ -76,6 +76,14 @@ flowchart TD
 - Dashboard view displaying project cards with dimensions, layer count, component count, and signal count.
 - Full support for multi-sheet schematics with seamless sheet switching and cross-probing.
 
+### 7. 🔍 Unified Search Engine (Parts, Signals & Both)
+- **Scope Selector:** Filter by **Both** (`⚡+📦`), **Parts** (`📦`), or **Signals / Nets** (`⚡`).
+- **Live Autocomplete:** Instant interactive dropdown as you type, grouped by components and signals with trace/via metrics.
+- **Global Hotkey:** Press `/` or `Ctrl+K` (`Cmd+K` on macOS) anywhere to instantly focus the search bar.
+- **Deep Cross-Probing:**
+  - Selecting a **Part** automatically centers both the 2D PCB and Schematic views on the component with a high-visibility radar pulse wave.
+  - Selecting a **Signal** triggers the **Net Glow Tracer** across all layers, calculating the net's bounding center and smoothly animating the viewport.
+
 ---
 
 ## 📥 Installation

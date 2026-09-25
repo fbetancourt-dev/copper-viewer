@@ -10,7 +10,7 @@ def build_template():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     templates_dir = os.path.join(base_dir, "copper_viewer", "templates")
     
-    with open(os.path.join(templates_dir, "viewer.html"), "r", encoding="utf-8") as f:
+    with open(os.path.join(templates_dir, "viewer_base.html"), "r", encoding="utf-8") as f:
         html = f.read()
 
     with open(os.path.join(templates_dir, "copper_3d.js"), "r", encoding="utf-8") as f:
@@ -18,6 +18,9 @@ def build_template():
 
     with open(os.path.join(templates_dir, "copper_tools.js"), "r", encoding="utf-8") as f:
         ctools_js = f.read()
+
+    with open(os.path.join(templates_dir, "copper_search.js"), "r", encoding="utf-8") as f:
+        csearch_js = f.read()
 
     # 1. Copper Extra CSS
     copper_css = """
@@ -324,6 +327,167 @@ def build_template():
             color: #8e95a5;
         }
 
+        /* Search Bar & Dropdown Results */
+        .copper-search-box {
+            position: relative;
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 9px;
+            padding: 2px 8px;
+            min-width: 290px;
+            transition: all 0.2s ease;
+        }
+        .copper-search-box:focus-within {
+            border-color: #00ffcc;
+            background: rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 14px rgba(0, 255, 204, 0.25);
+        }
+        .search-scope-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: #00ffcc;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .search-scope-menu {
+            position: absolute;
+            top: 38px;
+            left: 0;
+            background: #181a20;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 6px 0;
+            display: none;
+            flex-direction: column;
+            z-index: 1200;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            min-width: 170px;
+        }
+        .search-scope-menu.visible { display: flex; }
+        .scope-option {
+            padding: 6px 14px;
+            font-size: 0.8rem;
+            color: #e4e4e7;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .scope-option:hover {
+            background: rgba(0, 255, 204, 0.15);
+            color: #00ffcc;
+        }
+        .search-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #ffffff;
+            font-size: 0.85rem;
+            flex: 1;
+            padding: 6px 4px;
+            font-family: inherit;
+        }
+        .search-input::placeholder {
+            color: #71717a;
+            font-size: 0.8rem;
+        }
+        .search-clear-btn {
+            background: transparent;
+            border: none;
+            color: #71717a;
+            cursor: pointer;
+            font-size: 0.85rem;
+            display: none;
+            padding: 2px 4px;
+        }
+        .search-clear-btn:hover { color: #fff; }
+        .search-results-dropdown {
+            position: absolute;
+            top: 42px;
+            left: 0;
+            right: 0;
+            background: rgba(20, 22, 28, 0.96);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+            max-height: 420px;
+            overflow-y: auto;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+            z-index: 1100;
+            display: none;
+        }
+        .search-group-title {
+            padding: 8px 12px 4px 12px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #71717a;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .search-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            transition: all 0.12s ease;
+        }
+        .search-item:hover, .search-item.active {
+            background: rgba(0, 255, 204, 0.12);
+        }
+        .search-item.active .search-item-title {
+            color: #00ffcc;
+        }
+        .search-icon {
+            font-size: 1rem;
+        }
+        .search-item-info {
+            flex: 1;
+            overflow: hidden;
+        }
+        .search-item-title {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #ffffff;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .search-item-sub {
+            font-size: 0.75rem;
+            color: #8e95a5;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .search-tag {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.08);
+            color: #a1a1aa;
+        }
+        .search-tag.signal-tag {
+            background: rgba(0, 255, 204, 0.15);
+            color: #00ffcc;
+        }
+        .search-empty {
+            padding: 20px;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #a1a1aa;
+        }
+
         /* Toast Notifications */
         .copper-toast {
             position: fixed;
@@ -349,8 +513,25 @@ def build_template():
     # Inject CSS
     html = html.replace("</style>", copper_css + "\n    </style>")
 
-    # 2. Inject Tabs and Buttons into Header
-    header_tabs = """
+    # 2. Inject Search Bar & Tabs into Header
+    header_content = """
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <h1>⚡ Copper <span>Viewer</span></h1>
+
+            <!-- Copper Global Search (Parts, Signals, Both) -->
+            <div class="copper-search-box" id="copper-search-container">
+                <button class="search-scope-btn" id="copper-search-scope-btn" onclick="CopperSearch.toggleScopeDropdown()" title="Filtro de búsqueda: Ambos / Partes / Señales">Ambos ▾</button>
+                <div class="search-scope-menu" id="copper-search-scope-menu">
+                    <div class="scope-option" onclick="CopperSearch.setScope('both'); CopperSearch.toggleScopeDropdown();">⚡+📦 Ambos (Both)</div>
+                    <div class="scope-option" onclick="CopperSearch.setScope('parts'); CopperSearch.toggleScopeDropdown();">📦 Componentes (Parts)</div>
+                    <div class="scope-option" onclick="CopperSearch.setScope('signals'); CopperSearch.toggleScopeDropdown();">⚡ Señales / Redes (Signals)</div>
+                </div>
+                <input type="text" class="search-input" id="copper-search-input" placeholder="🔍 Buscar partes, señales (Ctrl+K)..." autocomplete="off" />
+                <button class="search-clear-btn" id="copper-search-clear" onclick="CopperSearch.clearSearch()">✕</button>
+                <div class="search-results-dropdown" id="copper-search-results"></div>
+            </div>
+        </div>
+
         <div class="copper-tabs">
             <button class="copper-tab active" onclick="switchCopperTab('tab-split')">📐+🟢 2D Dual</button>
             <button class="copper-tab" onclick="switchCopperTab('tab-pcb')">🟢 2D PCB</button>
@@ -361,8 +542,8 @@ def build_template():
         </div>
     """
 
-    # Insert tabs in header with Copper Viewer brand
-    html = re.sub(r'<h1>.*?</h1>', '<h1>⚡ Copper <span>Viewer</span></h1>\\n' + header_tabs, html)
+    # Insert brand, search bar, and tabs in header
+    html = re.sub(r'<h1>.*?</h1>', header_content.strip(), html)
 
     # 3. Add new tool buttons in toolbar (X-Ray, Caliper, Net Glow)
     copper_tool_buttons = """
@@ -466,6 +647,11 @@ def build_template():
     <!-- COPPER ADVANCED TOOLS -->
     <script>
     """ + ctools_js + """
+    </script>
+
+    <!-- COPPER PART & SIGNAL SEARCH ENGINE -->
+    <script>
+    """ + csearch_js + """
     </script>
 
     <!-- COPPER APP CONTROLLER -->
@@ -585,6 +771,9 @@ def build_template():
             setTimeout(function() {
                 CopperTools.initCaliper(pcbSvg);
             }, 300);
+        }
+        if (window.CopperSearch) {
+            CopperSearch.init();
         }
     });
     </script>
