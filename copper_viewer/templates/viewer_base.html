@@ -2883,6 +2883,9 @@
                     }
                     if (!schInst && EAGLE_DATA.schematic.instances) {
                         schInst = EAGLE_DATA.schematic.instances.find(i => i.part === partName);
+                        if (schInst && schInst.sheet && (schInst.sheet - 1) !== currentSheetIndex) {
+                            changeSheet(schInst.sheet - 1);
+                        }
                     }
                 }
                 if (schInst) {
