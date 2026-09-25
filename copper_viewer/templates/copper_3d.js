@@ -9,7 +9,7 @@
 
 var Copper3D = (function() {
     var scene, camera, renderer, controls;
-    var boardGroup, componentsGroup, copperGroup, lightsGroup;
+    var boardGroup, componentsGroup, copperGroup, lightsGroup, floorGroup;
     var currentData = null;
     var animationId = null;
     var isInitialized = false;
@@ -27,6 +27,7 @@ var Copper3D = (function() {
         xray: false,
         showComponents: true,
         showTraces: true,
+        showFloor: true,
         autoRotate: false
     };
 
@@ -168,6 +169,18 @@ var Copper3D = (function() {
 
         // Build Parametric 3D Components
         buildComponents();
+
+        // Build Studio Floor Grid
+        if (floorGroup) scene.remove(floorGroup);
+        floorGroup = new THREE.Group();
+        if (settings.showFloor) {
+            var gridDim = Math.max(bounds.width, bounds.height) * 2.8;
+            var grid = new THREE.GridHelper(gridDim, 36, 0x00ffcc, 0x222630);
+            grid.rotation.x = Math.PI / 2;
+            grid.position.z = -settings.thickness / 2 - 2.0;
+            floorGroup.add(grid);
+        }
+        scene.add(floorGroup);
 
         // Center entire board at (0, 0, 0)
         boardGroup.position.set(-centerX, -centerY, 0);
@@ -456,38 +469,38 @@ var Copper3D = (function() {
                 var pins = 8;
                 var match = pkgName.match(/\d+/);
                 if (match) pins = parseInt(match[0]);
-                var length = Math.max(pins * 1.27, 8);
-                var width = 6.2;
+                var pinsPerSide = Math.max(Math.floor(pins / 2), 4);
+                var length = pinsPerSide * 2.54 + 1.2;
+                var width = 7.62;
                 var height = 3.4;
 
                 var group = new THREE.Group();
-                // IC Body
-                var bodyGeom = new THREE.BoxGeometry(width, length, height);
+                // IC Body (aligned with X axis)
+                var bodyGeom = new THREE.BoxGeometry(length, width, height);
                 var body = new THREE.Mesh(bodyGeom, icBodyMat);
                 body.position.z = height / 2;
                 body.castShadow = true;
                 group.add(body);
 
-                // Pin 1 Notch
+                // Pin 1 Notch on left (-X)
                 var notchGeom = new THREE.CylinderGeometry(0.8, 0.8, 0.3, 12);
-                notchGeom.rotateZ(Math.PI / 2);
                 var notch = new THREE.Mesh(notchGeom, new THREE.MeshBasicMaterial({ color: 0x050505 }));
-                notch.position.set(0, length / 2, height);
+                notch.position.set(-length / 2, 0, height);
                 group.add(notch);
 
                 compMesh = group;
             }
-            // 2. Small Outline (SOIC / SOP / SSOP / TSSOP) with discrete Gull-Wing leads
-            else if (pkgName.indexOf("SOIC") !== -1 || pkgName.indexOf("SOP") !== -1 || pkgName.indexOf("SO") === 0) {
+            // 2. Small Outline (SOIC / SOP / SSOP / TSSOP / MSOP) with discrete Gull-Wing leads
+            else if ((pkgName.indexOf("SOIC") !== -1 || pkgName.indexOf("SOP") !== -1 || pkgName.indexOf("SSOP") !== -1 || pkgName.indexOf("TSSOP") !== -1 || pkgName.indexOf("MSOP") !== -1 || pkgName.indexOf("SO8") !== -1 || pkgName.indexOf("SO14") !== -1 || pkgName.indexOf("SO16") !== -1) && pkgName.indexOf("SOT") === -1) {
                 var group = new THREE.Group();
                 var pins = 8;
                 var match = pkgName.match(/\d+/);
-                if (match) pins = parseInt(match[0]);
-                var pitch = (pkgName.indexOf("TSSOP") !== -1) ? 0.65 : 1.27;
+                if (match) pins = Math.min(parseInt(match[0]), 64);
+                var pitch = (pkgName.indexOf("TSSOP") !== -1 || pkgName.indexOf("MSOP") !== -1) ? 0.65 : 1.27;
                 var pinsPerSide = Math.max(Math.floor(pins / 2), 4);
                 var length = pinsPerSide * pitch + 0.8;
-                var width = 4.2;
-                var height = 1.4;
+                var width = (pkgName.indexOf("MSOP") !== -1) ? 3.0 : 4.2;
+                var height = (pkgName.indexOf("MSOP") !== -1) ? 1.0 : 1.4;
 
                 var body = new THREE.Mesh(new THREE.BoxGeometry(width, length, height), icBodyMat);
                 body.position.z = height / 2;
@@ -508,6 +521,42 @@ var Copper3D = (function() {
                         group.add(lead);
                     }
                 }
+                compMesh = group;
+            }
+            // 2b. SOT-223 Voltage Regulators
+            else if (pkgName.indexOf("SOT223") !== -1) {
+                var group = new THREE.Group();
+                var body = new THREE.Mesh(new THREE.BoxGeometry(3.5, 6.5, 1.6), icBodyMat);
+                body.position.z = 0.8;
+                body.castShadow = true;
+                group.add(body);
+
+                for (var s = -1; s <= 1; s++) {
+                    var lead = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.7, 0.2), pinLeadMat);
+                    lead.position.set(-2.2, s * 2.3, 0.1);
+                    group.add(lead);
+                }
+                var tab = new THREE.Mesh(new THREE.BoxGeometry(0.8, 3.0, 0.2), pinLeadMat);
+                tab.position.set(2.2, 0, 0.1);
+                group.add(tab);
+                compMesh = group;
+            }
+            // 2c. SOT-23 Small Signal Transistors
+            else if (pkgName.indexOf("SOT") !== -1) {
+                var group = new THREE.Group();
+                var body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.9, 1.0), icBodyMat);
+                body.position.z = 0.5;
+                body.castShadow = true;
+                group.add(body);
+
+                for (var s = -1; s <= 1; s += 2) {
+                    var lead = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.15), pinLeadMat);
+                    lead.position.set(-1.1, s * 0.95, 0.08);
+                    group.add(lead);
+                }
+                var lead3 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.15), pinLeadMat);
+                lead3.position.set(1.1, 0, 0.08);
+                group.add(lead3);
                 compMesh = group;
             }
             // Axial Through-Hole Resistors (0204, 0207, AXIAL) with real color bands
@@ -632,24 +681,35 @@ var Copper3D = (function() {
 
                 compMesh = group;
             }
-            // 5. Pin Headers & Connectors
+            // 5. Pin Headers & Connectors (1X06, 1X08, 1X10, 2X03, etc.)
             else if (pkgName.indexOf("PINHD") !== -1 || pkgName.indexOf("HEADER") !== -1 || pkgName.indexOf("1X") === 0 || pkgName.indexOf("2X") === 0) {
                 var group = new THREE.Group();
-                var count = 4;
-                var match = pkgName.match(/\d+/);
-                if (match) count = parseInt(match[0]);
+                var rows = 1, cols = 4;
+                var m = pkgName.match(/(\d+)X(\d+)/i);
+                if (m) {
+                    rows = parseInt(m[1]) || 1;
+                    cols = parseInt(m[2]) || 4;
+                } else {
+                    var m2 = pkgName.match(/\d+/);
+                    if (m2) cols = parseInt(m2[0]) || 4;
+                }
 
-                var baseLen = count * 2.54;
-                var baseGeom = new THREE.BoxGeometry(2.5, baseLen, 2.5);
+                var baseW = cols * 2.54;
+                var baseH = rows * 2.54;
+                var baseGeom = new THREE.BoxGeometry(baseW, baseH, 2.5);
                 var base = new THREE.Mesh(baseGeom, icBodyMat);
                 base.position.z = 1.25;
                 group.add(base);
 
                 // Protruding Gold Pins
-                for (var p = 0; p < count; p++) {
-                    var pin = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.64, 6.0), goldPinMat);
-                    pin.position.set(0, (p - (count - 1) / 2) * 2.54, 4.0);
-                    group.add(pin);
+                for (var r = 0; r < rows; r++) {
+                    for (var c = 0; c < cols; c++) {
+                        var pin = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.64, 6.0), goldPinMat);
+                        var xPin = (c - (cols - 1) / 2) * 2.54;
+                        var yPin = (r - (rows - 1) / 2) * 2.54;
+                        pin.position.set(xPin, yPin, 4.0);
+                        group.add(pin);
+                    }
                 }
                 compMesh = group;
             }
@@ -725,6 +785,13 @@ var Copper3D = (function() {
         toggleAutoRotate: function() {
             settings.autoRotate = !settings.autoRotate;
             return settings.autoRotate;
+        },
+        toggleFloor: function() {
+            settings.showFloor = !settings.showFloor;
+            if (floorGroup) {
+                floorGroup.visible = settings.showFloor;
+            }
+            return settings.showFloor;
         },
         resetView: function(viewName) {
             if (!currentData || !currentData.board) return;

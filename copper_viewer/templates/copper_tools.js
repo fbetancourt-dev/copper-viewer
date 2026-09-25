@@ -216,7 +216,34 @@ var CopperTools = (function() {
         return xrayActive;
     }
 
-    // 4. BOM Table Generation & CSV Export
+    // 4. BOM Table Generation, Category Filtering & CSV Export
+    var activeBOMCategory = "all";
+
+    function getComponentCategory(ref) {
+        if (!ref) return "other";
+        var r = ref.toUpperCase();
+        if (r.startsWith("R")) return "resistor";
+        if (r.startsWith("C")) return "capacitor";
+        if (r.startsWith("D") || r.startsWith("LED")) return "diode";
+        if (r.startsWith("U") || r.startsWith("IC")) return "ic";
+        if (r.startsWith("Q") || r.startsWith("T")) return "transistor";
+        if (r.startsWith("J") || r.startsWith("JP") || r.startsWith("CON") || r.startsWith("X")) return "connector";
+        if (r.startsWith("L")) return "inductor";
+        if (r.startsWith("Y") || r.startsWith("XTAL")) return "crystal";
+        return "other";
+    }
+
+    function filterBOMByCategory(category, chipEl) {
+        activeBOMCategory = category;
+        var chips = document.querySelectorAll(".bom-cat-chip");
+        chips.forEach(function(c) { c.classList.remove("active"); });
+        if (chipEl) chipEl.classList.add("active");
+
+        if (window.EAGLE_DATA && EAGLE_DATA.bom) {
+            renderBOMTable(EAGLE_DATA.bom);
+        }
+    }
+
     function renderBOMTable(bomData) {
         var tbody = document.getElementById("bom-table-body");
         if (!tbody) return;
@@ -226,9 +253,20 @@ var CopperTools = (function() {
             return;
         }
 
+        var filtered = bomData.filter(function(item) {
+            if (activeBOMCategory === "all") return true;
+            var primaryRef = (item.refs && item.refs.length > 0) ? item.refs[0] : "";
+            return getComponentCategory(primaryRef) === activeBOMCategory;
+        });
+
+        if (!filtered.length) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 24px; color:#888;">No hay componentes en la categoría seleccionada.</td></tr>`;
+            return;
+        }
+
         var html = "";
-        for (var i = 0; i < bomData.length; i++) {
-            var item = bomData[i];
+        for (var i = 0; i < filtered.length; i++) {
+            var item = filtered[i];
             var refs = (item.refs || []).join(", ");
             var query = encodeURIComponent((item.value !== "No Value" ? item.value + " " : "") + item.package);
 
@@ -301,6 +339,130 @@ var CopperTools = (function() {
         showNotification("🎯 Archivo Pick & Place (CPL) exportado con éxito.");
     }
 
+    // 5. Board Info & DRC Metrics Modal
+    function showBoardInfoModal() {
+        var modal = document.getElementById("copper-drc-modal");
+        if (!modal) {
+            modal = document.createElement("div");
+            modal.id = "copper-drc-modal";
+            modal.className = "copper-modal-overlay";
+            modal.innerHTML = `
+                <div class="copper-modal-box">
+                    <div class="copper-modal-header">
+                        <h3 style="margin: 0; font-size: 1.2rem; font-weight: 600; color: #ffffff; display: flex; align-items: center; gap: 8px;">📊 Métricas de Fabricación & DRC</h3>
+                        <button class="copper-modal-close" onclick="CopperTools.closeBoardInfoModal()" style="background: none; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer;">✕</button>
+                    </div>
+                    <div class="copper-modal-body" id="copper-drc-content"></div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Close on backdrop click
+            modal.addEventListener("click", function(e) {
+                if (e.target === modal) closeBoardInfoModal();
+            });
+        }
+        populateBoardMetrics();
+        modal.classList.add("visible");
+    }
+
+    function closeBoardInfoModal() {
+        var modal = document.getElementById("copper-drc-modal");
+        if (modal) modal.classList.remove("visible");
+    }
+
+    function populateBoardMetrics() {
+        var content = document.getElementById("copper-drc-content");
+        if (!content || !window.EAGLE_DATA || !EAGLE_DATA.board) return;
+
+        var b = EAGLE_DATA.board;
+        var bounds = b.bounds || { width: 0, height: 0, min_x: 0, min_y: 0, max_x: 0, max_y: 0 };
+        var w = bounds.width || (bounds.max_x - bounds.min_x) || 50;
+        var h = bounds.height || (bounds.max_y - bounds.min_y) || 40;
+        var area = (w * h / 100).toFixed(2);
+        var elements = b.elements || [];
+        var signals = b.signals || [];
+
+        var smdCount = 0;
+        var thtCount = 0;
+        var topCount = 0;
+        var botCount = 0;
+
+        elements.forEach(function(el) {
+            var isBottom = (el.rot || "").indexOf("M") !== -1;
+            if (isBottom) botCount++; else topCount++;
+
+            var pkg = b.packages ? (b.packages[el.library + "_" + el.package] || b.packages[el.package]) : null;
+            if (pkg) {
+                if (pkg.smds && pkg.smds.length > 0) smdCount++;
+                else if (pkg.pads && pkg.pads.length > 0) thtCount++;
+                else smdCount++;
+            } else {
+                smdCount++;
+            }
+        });
+
+        var vias = [];
+        var wires = [];
+        signals.forEach(function(sig) {
+            if (sig.vias) vias.push.apply(vias, sig.vias);
+            if (sig.wires) wires.push.apply(wires, sig.wires);
+        });
+
+        var minDrill = Infinity;
+        vias.forEach(function(v) {
+            var d = v.drill || 0.6;
+            if (d < minDrill) minDrill = d;
+        });
+        if (!isFinite(minDrill)) minDrill = 0.6;
+
+        var minTrace = Infinity;
+        wires.forEach(function(w) {
+            var tw = w.width || 0.254;
+            if (tw > 0 && tw < minTrace) minTrace = tw;
+        });
+        if (!isFinite(minTrace)) minTrace = 0.254;
+
+        content.innerHTML = `
+            <div class="drc-stats-grid">
+                <div class="drc-card">
+                    <div class="drc-card-label">Dimensiones Físicas</div>
+                    <div class="drc-card-val">${w.toFixed(2)} × ${h.toFixed(2)} mm</div>
+                    <div class="drc-card-sub">${(w / 25.4).toFixed(2)}" × ${(h / 25.4).toFixed(2)}" • Superficie: ${area} cm²</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Componentes (SMT / THT)</div>
+                    <div class="drc-card-val">${elements.length}</div>
+                    <div class="drc-card-sub">${smdCount} SMD • ${thtCount} THT (${topCount} Top / ${botCount} Bot)</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Señales & Redes (Nets)</div>
+                    <div class="drc-card-val">${signals.length}</div>
+                    <div class="drc-card-sub">${wires.length} segmentos ruteados</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Vías de Interconexión</div>
+                    <div class="drc-card-val">${vias.length}</div>
+                    <div class="drc-card-sub">Broca mínima: ${minDrill.toFixed(3)} mm (${(minDrill * 39.37).toFixed(1)} mils)</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Ancho Mínimo de Traza (DRC)</div>
+                    <div class="drc-card-val">${minTrace.toFixed(3)} mm</div>
+                    <div class="drc-card-sub">${(minTrace * 39.37).toFixed(1)} mils (Estándar 6/6 mil soportado)</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Capas de Cobre</div>
+                    <div class="drc-card-val">2 Capas</div>
+                    <div class="drc-card-sub">Top (Capa 1) + Bottom (Capa 16)</div>
+                </div>
+            </div>
+            <div class="drc-footer-actions">
+                <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="background:#00ffcc; color:#000; font-weight:600;">⬇ Descargar BOM CSV</button>
+                <button class="copper-mini-btn" onclick="CopperTools.exportCentroidCSV()" style="background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2);">🎯 Descargar CPL (Pick & Place)</button>
+            </div>
+        `;
+    }
+
     function showNotification(msg) {
         var toast = document.getElementById("copper-toast");
         if (!toast) {
@@ -323,8 +485,11 @@ var CopperTools = (function() {
         glowNet: glowNet,
         toggleXRay: toggleXRay,
         renderBOMTable: renderBOMTable,
+        filterBOMByCategory: filterBOMByCategory,
         exportBOMToCSV: exportBOMToCSV,
         exportCentroidCSV: exportCentroidCSV,
+        showBoardInfoModal: showBoardInfoModal,
+        closeBoardInfoModal: closeBoardInfoModal,
         showNotification: showNotification
     };
 })();

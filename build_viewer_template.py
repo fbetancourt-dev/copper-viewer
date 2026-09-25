@@ -529,6 +529,102 @@ def build_template():
         .copper-toast.visible {
             opacity: 1;
         }
+
+        /* Modal & DRC Metrics */
+        .copper-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+        .copper-modal-overlay.visible {
+            display: flex;
+        }
+        .copper-modal-box {
+            background: #14161e;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            width: 640px;
+            max-width: 92vw;
+            padding: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+        }
+        .copper-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 12px;
+        }
+        .drc-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 18px;
+        }
+        .drc-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .drc-card-label {
+            font-size: 0.72rem;
+            color: #8e95a5;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .drc-card-val {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #00ffcc;
+            margin: 4px 0;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .drc-card-sub {
+            font-size: 0.76rem;
+            color: #cbd5e1;
+        }
+        .drc-footer-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .bom-cat-chips {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            align-items: center;
+        }
+        .bom-cat-chip {
+            background: rgba(255, 255, 255, 0.05);
+            color: #94a3b8;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .bom-cat-chip:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+        .bom-cat-chip.active {
+            background: #00ffcc;
+            color: #0a0a0c;
+            font-weight: 600;
+            border-color: #00ffcc;
+        }
     """
 
     # Inject CSS
@@ -566,10 +662,11 @@ def build_template():
     # Insert brand, search bar, and tabs in header
     html = re.sub(r'<h1>.*?</h1>', header_content.strip(), html)
 
-    # 3. Add new tool buttons in toolbar (X-Ray, Caliper, Net Glow)
+    # 3. Add new tool buttons in toolbar (X-Ray, Caliper, Net Glow, DRC Info)
     copper_tool_buttons = """
             <button id="btn-xray" class="copper-mini-btn" onclick="CopperTools.toggleXRay()" title="Modo Rayos X (Mesa de Luz)">💡 Rayos X</button>
             <button id="btn-caliper" class="copper-mini-btn" onclick="CopperTools.toggleCaliper()" title="Medición Caliper punto a punto">📏 Caliper</button>
+            <button id="btn-drc-info" class="copper-mini-btn" onclick="CopperTools.showBoardInfoModal()" title="Estadísticas de la placa y reglas de diseño DRC">📊 Info & DRC</button>
     """
     html = html.replace('<div class="toolbar-tools">', '<div class="toolbar-tools">\n' + copper_tool_buttons)
 
@@ -597,6 +694,7 @@ def build_template():
                 <div class="control-row" style="margin-top:4px;">
                     <button id="btn-3d-spin" class="copper-mini-btn" onclick="toggle3DSpin(this)">🔄 Auto-Giro</button>
                     <button id="btn-3d-comp" class="copper-mini-btn active" onclick="toggle3DComponents(this)">Chips 3D</button>
+                    <button id="btn-3d-floor" class="copper-mini-btn active" onclick="toggle3DFloor(this)">📐 Piso Grid</button>
                     <button id="btn-3d-xray" class="copper-mini-btn" onclick="toggle3DXRay(this)">Rayos X 3D</button>
                 </div>
             </div>
@@ -613,6 +711,16 @@ def build_template():
                     <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="padding: 8px 16px; background: #00ffcc; color: #000; font-weight: 600; border: none;">⬇ Descargar BOM CSV</button>
                     <button class="copper-mini-btn" onclick="CopperTools.exportCentroidCSV()" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-weight: 500; border: 1px solid rgba(255, 255, 255, 0.15);" title="Exportar coordenadas X/Y, rotación y cara para montaje SMD">🎯 Pick & Place (CPL)</button>
                 </div>
+            </div>
+            <div class="bom-cat-chips">
+                <span style="font-size: 0.8rem; color: #8e95a5; display: flex; align-items: center; margin-right: 4px;">Categoría:</span>
+                <button class="bom-cat-chip active" onclick="CopperTools.filterBOMByCategory('all', this)">Todos</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('ic', this)">ICs</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('resistor', this)">Resistores</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('capacitor', this)">Condensadores</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('diode', this)">Diodos/LED</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('transistor', this)">Transistores</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('connector', this)">Conectores</button>
             </div>
             <table class="bom-table">
                 <thead>
@@ -738,6 +846,11 @@ def build_template():
     function toggle3DXRay(btn) {
         var xray = Copper3D.toggleXRay();
         btn.classList.toggle('active', xray);
+    }
+
+    function toggle3DFloor(btn) {
+        var floor = Copper3D.toggleFloor();
+        btn.classList.toggle('active', floor);
     }
 
     function renderGallery() {

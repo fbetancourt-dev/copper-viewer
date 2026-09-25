@@ -1151,6 +1151,102 @@
         .copper-toast.visible {
             opacity: 1;
         }
+
+        /* Modal & DRC Metrics */
+        .copper-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+        .copper-modal-overlay.visible {
+            display: flex;
+        }
+        .copper-modal-box {
+            background: #14161e;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            width: 640px;
+            max-width: 92vw;
+            padding: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+        }
+        .copper-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 12px;
+        }
+        .drc-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 18px;
+        }
+        .drc-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .drc-card-label {
+            font-size: 0.72rem;
+            color: #8e95a5;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .drc-card-val {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #00ffcc;
+            margin: 4px 0;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .drc-card-sub {
+            font-size: 0.76rem;
+            color: #cbd5e1;
+        }
+        .drc-footer-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .bom-cat-chips {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            align-items: center;
+        }
+        .bom-cat-chip {
+            background: rgba(255, 255, 255, 0.05);
+            color: #94a3b8;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .bom-cat-chip:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+        .bom-cat-chip.active {
+            background: #00ffcc;
+            color: #0a0a0c;
+            font-weight: 600;
+            border-color: #00ffcc;
+        }
     
     </style>
 </head>
@@ -1282,6 +1378,7 @@
                 <div class="control-row" style="margin-top:4px;">
                     <button id="btn-3d-spin" class="copper-mini-btn" onclick="toggle3DSpin(this)">🔄 Auto-Giro</button>
                     <button id="btn-3d-comp" class="copper-mini-btn active" onclick="toggle3DComponents(this)">Chips 3D</button>
+                    <button id="btn-3d-floor" class="copper-mini-btn active" onclick="toggle3DFloor(this)">📐 Piso Grid</button>
                     <button id="btn-3d-xray" class="copper-mini-btn" onclick="toggle3DXRay(this)">Rayos X 3D</button>
                 </div>
             </div>
@@ -1298,6 +1395,16 @@
                     <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="padding: 8px 16px; background: #00ffcc; color: #000; font-weight: 600; border: none;">⬇ Descargar BOM CSV</button>
                     <button class="copper-mini-btn" onclick="CopperTools.exportCentroidCSV()" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-weight: 500; border: 1px solid rgba(255, 255, 255, 0.15);" title="Exportar coordenadas X/Y, rotación y cara para montaje SMD">🎯 Pick & Place (CPL)</button>
                 </div>
+            </div>
+            <div class="bom-cat-chips">
+                <span style="font-size: 0.8rem; color: #8e95a5; display: flex; align-items: center; margin-right: 4px;">Categoría:</span>
+                <button class="bom-cat-chip active" onclick="CopperTools.filterBOMByCategory('all', this)">Todos</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('ic', this)">ICs</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('resistor', this)">Resistores</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('capacitor', this)">Condensadores</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('diode', this)">Diodos/LED</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('transistor', this)">Transistores</button>
+                <button class="bom-cat-chip" onclick="CopperTools.filterBOMByCategory('connector', this)">Conectores</button>
             </div>
             <table class="bom-table">
                 <thead>
@@ -3995,7 +4102,7 @@
 
 var Copper3D = (function() {
     var scene, camera, renderer, controls;
-    var boardGroup, componentsGroup, copperGroup, lightsGroup;
+    var boardGroup, componentsGroup, copperGroup, lightsGroup, floorGroup;
     var currentData = null;
     var animationId = null;
     var isInitialized = false;
@@ -4013,6 +4120,7 @@ var Copper3D = (function() {
         xray: false,
         showComponents: true,
         showTraces: true,
+        showFloor: true,
         autoRotate: false
     };
 
@@ -4154,6 +4262,18 @@ var Copper3D = (function() {
 
         // Build Parametric 3D Components
         buildComponents();
+
+        // Build Studio Floor Grid
+        if (floorGroup) scene.remove(floorGroup);
+        floorGroup = new THREE.Group();
+        if (settings.showFloor) {
+            var gridDim = Math.max(bounds.width, bounds.height) * 2.8;
+            var grid = new THREE.GridHelper(gridDim, 36, 0x00ffcc, 0x222630);
+            grid.rotation.x = Math.PI / 2;
+            grid.position.z = -settings.thickness / 2 - 2.0;
+            floorGroup.add(grid);
+        }
+        scene.add(floorGroup);
 
         // Center entire board at (0, 0, 0)
         boardGroup.position.set(-centerX, -centerY, 0);
@@ -4442,38 +4562,38 @@ var Copper3D = (function() {
                 var pins = 8;
                 var match = pkgName.match(/\d+/);
                 if (match) pins = parseInt(match[0]);
-                var length = Math.max(pins * 1.27, 8);
-                var width = 6.2;
+                var pinsPerSide = Math.max(Math.floor(pins / 2), 4);
+                var length = pinsPerSide * 2.54 + 1.2;
+                var width = 7.62;
                 var height = 3.4;
 
                 var group = new THREE.Group();
-                // IC Body
-                var bodyGeom = new THREE.BoxGeometry(width, length, height);
+                // IC Body (aligned with X axis)
+                var bodyGeom = new THREE.BoxGeometry(length, width, height);
                 var body = new THREE.Mesh(bodyGeom, icBodyMat);
                 body.position.z = height / 2;
                 body.castShadow = true;
                 group.add(body);
 
-                // Pin 1 Notch
+                // Pin 1 Notch on left (-X)
                 var notchGeom = new THREE.CylinderGeometry(0.8, 0.8, 0.3, 12);
-                notchGeom.rotateZ(Math.PI / 2);
                 var notch = new THREE.Mesh(notchGeom, new THREE.MeshBasicMaterial({ color: 0x050505 }));
-                notch.position.set(0, length / 2, height);
+                notch.position.set(-length / 2, 0, height);
                 group.add(notch);
 
                 compMesh = group;
             }
-            // 2. Small Outline (SOIC / SOP / SSOP / TSSOP) with discrete Gull-Wing leads
-            else if (pkgName.indexOf("SOIC") !== -1 || pkgName.indexOf("SOP") !== -1 || pkgName.indexOf("SO") === 0) {
+            // 2. Small Outline (SOIC / SOP / SSOP / TSSOP / MSOP) with discrete Gull-Wing leads
+            else if ((pkgName.indexOf("SOIC") !== -1 || pkgName.indexOf("SOP") !== -1 || pkgName.indexOf("SSOP") !== -1 || pkgName.indexOf("TSSOP") !== -1 || pkgName.indexOf("MSOP") !== -1 || pkgName.indexOf("SO8") !== -1 || pkgName.indexOf("SO14") !== -1 || pkgName.indexOf("SO16") !== -1) && pkgName.indexOf("SOT") === -1) {
                 var group = new THREE.Group();
                 var pins = 8;
                 var match = pkgName.match(/\d+/);
-                if (match) pins = parseInt(match[0]);
-                var pitch = (pkgName.indexOf("TSSOP") !== -1) ? 0.65 : 1.27;
+                if (match) pins = Math.min(parseInt(match[0]), 64);
+                var pitch = (pkgName.indexOf("TSSOP") !== -1 || pkgName.indexOf("MSOP") !== -1) ? 0.65 : 1.27;
                 var pinsPerSide = Math.max(Math.floor(pins / 2), 4);
                 var length = pinsPerSide * pitch + 0.8;
-                var width = 4.2;
-                var height = 1.4;
+                var width = (pkgName.indexOf("MSOP") !== -1) ? 3.0 : 4.2;
+                var height = (pkgName.indexOf("MSOP") !== -1) ? 1.0 : 1.4;
 
                 var body = new THREE.Mesh(new THREE.BoxGeometry(width, length, height), icBodyMat);
                 body.position.z = height / 2;
@@ -4494,6 +4614,42 @@ var Copper3D = (function() {
                         group.add(lead);
                     }
                 }
+                compMesh = group;
+            }
+            // 2b. SOT-223 Voltage Regulators
+            else if (pkgName.indexOf("SOT223") !== -1) {
+                var group = new THREE.Group();
+                var body = new THREE.Mesh(new THREE.BoxGeometry(3.5, 6.5, 1.6), icBodyMat);
+                body.position.z = 0.8;
+                body.castShadow = true;
+                group.add(body);
+
+                for (var s = -1; s <= 1; s++) {
+                    var lead = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.7, 0.2), pinLeadMat);
+                    lead.position.set(-2.2, s * 2.3, 0.1);
+                    group.add(lead);
+                }
+                var tab = new THREE.Mesh(new THREE.BoxGeometry(0.8, 3.0, 0.2), pinLeadMat);
+                tab.position.set(2.2, 0, 0.1);
+                group.add(tab);
+                compMesh = group;
+            }
+            // 2c. SOT-23 Small Signal Transistors
+            else if (pkgName.indexOf("SOT") !== -1) {
+                var group = new THREE.Group();
+                var body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.9, 1.0), icBodyMat);
+                body.position.z = 0.5;
+                body.castShadow = true;
+                group.add(body);
+
+                for (var s = -1; s <= 1; s += 2) {
+                    var lead = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.15), pinLeadMat);
+                    lead.position.set(-1.1, s * 0.95, 0.08);
+                    group.add(lead);
+                }
+                var lead3 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.15), pinLeadMat);
+                lead3.position.set(1.1, 0, 0.08);
+                group.add(lead3);
                 compMesh = group;
             }
             // Axial Through-Hole Resistors (0204, 0207, AXIAL) with real color bands
@@ -4618,24 +4774,35 @@ var Copper3D = (function() {
 
                 compMesh = group;
             }
-            // 5. Pin Headers & Connectors
+            // 5. Pin Headers & Connectors (1X06, 1X08, 1X10, 2X03, etc.)
             else if (pkgName.indexOf("PINHD") !== -1 || pkgName.indexOf("HEADER") !== -1 || pkgName.indexOf("1X") === 0 || pkgName.indexOf("2X") === 0) {
                 var group = new THREE.Group();
-                var count = 4;
-                var match = pkgName.match(/\d+/);
-                if (match) count = parseInt(match[0]);
+                var rows = 1, cols = 4;
+                var m = pkgName.match(/(\d+)X(\d+)/i);
+                if (m) {
+                    rows = parseInt(m[1]) || 1;
+                    cols = parseInt(m[2]) || 4;
+                } else {
+                    var m2 = pkgName.match(/\d+/);
+                    if (m2) cols = parseInt(m2[0]) || 4;
+                }
 
-                var baseLen = count * 2.54;
-                var baseGeom = new THREE.BoxGeometry(2.5, baseLen, 2.5);
+                var baseW = cols * 2.54;
+                var baseH = rows * 2.54;
+                var baseGeom = new THREE.BoxGeometry(baseW, baseH, 2.5);
                 var base = new THREE.Mesh(baseGeom, icBodyMat);
                 base.position.z = 1.25;
                 group.add(base);
 
                 // Protruding Gold Pins
-                for (var p = 0; p < count; p++) {
-                    var pin = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.64, 6.0), goldPinMat);
-                    pin.position.set(0, (p - (count - 1) / 2) * 2.54, 4.0);
-                    group.add(pin);
+                for (var r = 0; r < rows; r++) {
+                    for (var c = 0; c < cols; c++) {
+                        var pin = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.64, 6.0), goldPinMat);
+                        var xPin = (c - (cols - 1) / 2) * 2.54;
+                        var yPin = (r - (rows - 1) / 2) * 2.54;
+                        pin.position.set(xPin, yPin, 4.0);
+                        group.add(pin);
+                    }
                 }
                 compMesh = group;
             }
@@ -4711,6 +4878,13 @@ var Copper3D = (function() {
         toggleAutoRotate: function() {
             settings.autoRotate = !settings.autoRotate;
             return settings.autoRotate;
+        },
+        toggleFloor: function() {
+            settings.showFloor = !settings.showFloor;
+            if (floorGroup) {
+                floorGroup.visible = settings.showFloor;
+            }
+            return settings.showFloor;
         },
         resetView: function(viewName) {
             if (!currentData || !currentData.board) return;
@@ -4958,7 +5132,34 @@ var CopperTools = (function() {
         return xrayActive;
     }
 
-    // 4. BOM Table Generation & CSV Export
+    // 4. BOM Table Generation, Category Filtering & CSV Export
+    var activeBOMCategory = "all";
+
+    function getComponentCategory(ref) {
+        if (!ref) return "other";
+        var r = ref.toUpperCase();
+        if (r.startsWith("R")) return "resistor";
+        if (r.startsWith("C")) return "capacitor";
+        if (r.startsWith("D") || r.startsWith("LED")) return "diode";
+        if (r.startsWith("U") || r.startsWith("IC")) return "ic";
+        if (r.startsWith("Q") || r.startsWith("T")) return "transistor";
+        if (r.startsWith("J") || r.startsWith("JP") || r.startsWith("CON") || r.startsWith("X")) return "connector";
+        if (r.startsWith("L")) return "inductor";
+        if (r.startsWith("Y") || r.startsWith("XTAL")) return "crystal";
+        return "other";
+    }
+
+    function filterBOMByCategory(category, chipEl) {
+        activeBOMCategory = category;
+        var chips = document.querySelectorAll(".bom-cat-chip");
+        chips.forEach(function(c) { c.classList.remove("active"); });
+        if (chipEl) chipEl.classList.add("active");
+
+        if (window.EAGLE_DATA && EAGLE_DATA.bom) {
+            renderBOMTable(EAGLE_DATA.bom);
+        }
+    }
+
     function renderBOMTable(bomData) {
         var tbody = document.getElementById("bom-table-body");
         if (!tbody) return;
@@ -4968,9 +5169,20 @@ var CopperTools = (function() {
             return;
         }
 
+        var filtered = bomData.filter(function(item) {
+            if (activeBOMCategory === "all") return true;
+            var primaryRef = (item.refs && item.refs.length > 0) ? item.refs[0] : "";
+            return getComponentCategory(primaryRef) === activeBOMCategory;
+        });
+
+        if (!filtered.length) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 24px; color:#888;">No hay componentes en la categoría seleccionada.</td></tr>`;
+            return;
+        }
+
         var html = "";
-        for (var i = 0; i < bomData.length; i++) {
-            var item = bomData[i];
+        for (var i = 0; i < filtered.length; i++) {
+            var item = filtered[i];
             var refs = (item.refs || []).join(", ");
             var query = encodeURIComponent((item.value !== "No Value" ? item.value + " " : "") + item.package);
 
@@ -5043,6 +5255,130 @@ var CopperTools = (function() {
         showNotification("🎯 Archivo Pick & Place (CPL) exportado con éxito.");
     }
 
+    // 5. Board Info & DRC Metrics Modal
+    function showBoardInfoModal() {
+        var modal = document.getElementById("copper-drc-modal");
+        if (!modal) {
+            modal = document.createElement("div");
+            modal.id = "copper-drc-modal";
+            modal.className = "copper-modal-overlay";
+            modal.innerHTML = `
+                <div class="copper-modal-box">
+                    <div class="copper-modal-header">
+                        <h3 style="margin: 0; font-size: 1.2rem; font-weight: 600; color: #ffffff; display: flex; align-items: center; gap: 8px;">📊 Métricas de Fabricación & DRC</h3>
+                        <button class="copper-modal-close" onclick="CopperTools.closeBoardInfoModal()" style="background: none; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer;">✕</button>
+                    </div>
+                    <div class="copper-modal-body" id="copper-drc-content"></div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Close on backdrop click
+            modal.addEventListener("click", function(e) {
+                if (e.target === modal) closeBoardInfoModal();
+            });
+        }
+        populateBoardMetrics();
+        modal.classList.add("visible");
+    }
+
+    function closeBoardInfoModal() {
+        var modal = document.getElementById("copper-drc-modal");
+        if (modal) modal.classList.remove("visible");
+    }
+
+    function populateBoardMetrics() {
+        var content = document.getElementById("copper-drc-content");
+        if (!content || !window.EAGLE_DATA || !EAGLE_DATA.board) return;
+
+        var b = EAGLE_DATA.board;
+        var bounds = b.bounds || { width: 0, height: 0, min_x: 0, min_y: 0, max_x: 0, max_y: 0 };
+        var w = bounds.width || (bounds.max_x - bounds.min_x) || 50;
+        var h = bounds.height || (bounds.max_y - bounds.min_y) || 40;
+        var area = (w * h / 100).toFixed(2);
+        var elements = b.elements || [];
+        var signals = b.signals || [];
+
+        var smdCount = 0;
+        var thtCount = 0;
+        var topCount = 0;
+        var botCount = 0;
+
+        elements.forEach(function(el) {
+            var isBottom = (el.rot || "").indexOf("M") !== -1;
+            if (isBottom) botCount++; else topCount++;
+
+            var pkg = b.packages ? (b.packages[el.library + "_" + el.package] || b.packages[el.package]) : null;
+            if (pkg) {
+                if (pkg.smds && pkg.smds.length > 0) smdCount++;
+                else if (pkg.pads && pkg.pads.length > 0) thtCount++;
+                else smdCount++;
+            } else {
+                smdCount++;
+            }
+        });
+
+        var vias = [];
+        var wires = [];
+        signals.forEach(function(sig) {
+            if (sig.vias) vias.push.apply(vias, sig.vias);
+            if (sig.wires) wires.push.apply(wires, sig.wires);
+        });
+
+        var minDrill = Infinity;
+        vias.forEach(function(v) {
+            var d = v.drill || 0.6;
+            if (d < minDrill) minDrill = d;
+        });
+        if (!isFinite(minDrill)) minDrill = 0.6;
+
+        var minTrace = Infinity;
+        wires.forEach(function(w) {
+            var tw = w.width || 0.254;
+            if (tw > 0 && tw < minTrace) minTrace = tw;
+        });
+        if (!isFinite(minTrace)) minTrace = 0.254;
+
+        content.innerHTML = `
+            <div class="drc-stats-grid">
+                <div class="drc-card">
+                    <div class="drc-card-label">Dimensiones Físicas</div>
+                    <div class="drc-card-val">${w.toFixed(2)} × ${h.toFixed(2)} mm</div>
+                    <div class="drc-card-sub">${(w / 25.4).toFixed(2)}" × ${(h / 25.4).toFixed(2)}" • Superficie: ${area} cm²</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Componentes (SMT / THT)</div>
+                    <div class="drc-card-val">${elements.length}</div>
+                    <div class="drc-card-sub">${smdCount} SMD • ${thtCount} THT (${topCount} Top / ${botCount} Bot)</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Señales & Redes (Nets)</div>
+                    <div class="drc-card-val">${signals.length}</div>
+                    <div class="drc-card-sub">${wires.length} segmentos ruteados</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Vías de Interconexión</div>
+                    <div class="drc-card-val">${vias.length}</div>
+                    <div class="drc-card-sub">Broca mínima: ${minDrill.toFixed(3)} mm (${(minDrill * 39.37).toFixed(1)} mils)</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Ancho Mínimo de Traza (DRC)</div>
+                    <div class="drc-card-val">${minTrace.toFixed(3)} mm</div>
+                    <div class="drc-card-sub">${(minTrace * 39.37).toFixed(1)} mils (Estándar 6/6 mil soportado)</div>
+                </div>
+                <div class="drc-card">
+                    <div class="drc-card-label">Capas de Cobre</div>
+                    <div class="drc-card-val">2 Capas</div>
+                    <div class="drc-card-sub">Top (Capa 1) + Bottom (Capa 16)</div>
+                </div>
+            </div>
+            <div class="drc-footer-actions">
+                <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="background:#00ffcc; color:#000; font-weight:600;">⬇ Descargar BOM CSV</button>
+                <button class="copper-mini-btn" onclick="CopperTools.exportCentroidCSV()" style="background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2);">🎯 Descargar CPL (Pick & Place)</button>
+            </div>
+        `;
+    }
+
     function showNotification(msg) {
         var toast = document.getElementById("copper-toast");
         if (!toast) {
@@ -5065,8 +5401,11 @@ var CopperTools = (function() {
         glowNet: glowNet,
         toggleXRay: toggleXRay,
         renderBOMTable: renderBOMTable,
+        filterBOMByCategory: filterBOMByCategory,
         exportBOMToCSV: exportBOMToCSV,
         exportCentroidCSV: exportCentroidCSV,
+        showBoardInfoModal: showBoardInfoModal,
+        closeBoardInfoModal: closeBoardInfoModal,
         showNotification: showNotification
     };
 })();
@@ -5765,6 +6104,11 @@ var CopperSearch = (function() {
     function toggle3DXRay(btn) {
         var xray = Copper3D.toggleXRay();
         btn.classList.toggle('active', xray);
+    }
+
+    function toggle3DFloor(btn) {
+        var floor = Copper3D.toggleFloor();
+        btn.classList.toggle('active', floor);
     }
 
     function renderGallery() {
