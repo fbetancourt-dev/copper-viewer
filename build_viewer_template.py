@@ -452,6 +452,27 @@ def build_template():
         .search-icon {
             font-size: 1rem;
         }
+        .thumb-container {
+            width: 38px;
+            height: 38px;
+            border-radius: 7px;
+            background: #11141a;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            overflow: hidden;
+            box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.5);
+        }
+        .copper-micro-thumb {
+            width: 32px;
+            height: 32px;
+            display: block;
+        }
+        .thumb-fallback {
+            font-size: 1.1rem;
+        }
         .search-item-info {
             flex: 1;
             overflow: hidden;
