@@ -275,6 +275,32 @@ var CopperTools = (function() {
         document.body.removeChild(link);
     }
 
+    function exportCentroidCSV() {
+        if (!window.EAGLE_DATA || !EAGLE_DATA.board || !EAGLE_DATA.board.elements) return;
+        var elements = EAGLE_DATA.board.elements;
+        var csv = "Designator,Val,Package,Mid X,Mid Y,Rotation,Layer\n";
+
+        for (var i = 0; i < elements.length; i++) {
+            var el = elements[i];
+            var isBottom = (el.rot || "").indexOf("M") !== -1;
+            var layer = isBottom ? "Bottom" : "Top";
+            var rotVal = (parseFloat((el.rot || "0").replace(/[^0-9.-]/g, "")) || 0);
+            csv += `"${el.name}","${el.value || ""}","${el.package || ""}","${el.x.toFixed(3)}","${el.y.toFixed(3)}","${rotVal}","${layer}"\n`;
+        }
+
+        var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        var link = document.createElement("a");
+        var url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", (EAGLE_DATA.name || "circuit") + "_pick_and_place_cpl.csv");
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showNotification("🎯 Archivo Pick & Place (CPL) exportado con éxito.");
+    }
+
     function showNotification(msg) {
         var toast = document.getElementById("copper-toast");
         if (!toast) {
@@ -298,6 +324,7 @@ var CopperTools = (function() {
         toggleXRay: toggleXRay,
         renderBOMTable: renderBOMTable,
         exportBOMToCSV: exportBOMToCSV,
+        exportCentroidCSV: exportCentroidCSV,
         showNotification: showNotification
     };
 })();

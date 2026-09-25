@@ -609,8 +609,9 @@ def build_template():
                     <h2 style="font-size: 1.4rem; font-weight: 600; color: #ffffff;">📋 Lista de Materiales (BOM)</h2>
                     <p style="font-size: 0.85rem; color: #a1a1aa; margin-top: 4px;">Componentes agrupados, referencias de diseño y enlaces a distribuidores.</p>
                 </div>
-                <div>
-                    <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="padding: 8px 16px; background: #00ffcc; color: #000; font-weight: 600; border: none;">⬇ Descargar CSV</button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="padding: 8px 16px; background: #00ffcc; color: #000; font-weight: 600; border: none;">⬇ Descargar BOM CSV</button>
+                    <button class="copper-mini-btn" onclick="CopperTools.exportCentroidCSV()" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-weight: 500; border: 1px solid rgba(255, 255, 255, 0.15);" title="Exportar coordenadas X/Y, rotación y cara para montaje SMD">🎯 Pick & Place (CPL)</button>
                 </div>
             </div>
             <table class="bom-table">

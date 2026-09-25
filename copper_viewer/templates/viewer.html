@@ -1294,8 +1294,9 @@
                     <h2 style="font-size: 1.4rem; font-weight: 600; color: #ffffff;">📋 Lista de Materiales (BOM)</h2>
                     <p style="font-size: 0.85rem; color: #a1a1aa; margin-top: 4px;">Componentes agrupados, referencias de diseño y enlaces a distribuidores.</p>
                 </div>
-                <div>
-                    <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="padding: 8px 16px; background: #00ffcc; color: #000; font-weight: 600; border: none;">⬇ Descargar CSV</button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="padding: 8px 16px; background: #00ffcc; color: #000; font-weight: 600; border: none;">⬇ Descargar BOM CSV</button>
+                    <button class="copper-mini-btn" onclick="CopperTools.exportCentroidCSV()" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.08); color: #ffffff; font-weight: 500; border: 1px solid rgba(255, 255, 255, 0.15);" title="Exportar coordenadas X/Y, rotación y cara para montaje SMD">🎯 Pick & Place (CPL)</button>
                 </div>
             </div>
             <table class="bom-table">
@@ -4391,6 +4392,40 @@ var Copper3D = (function() {
             roughness: 0.2
         });
 
+        function getResistorColorBands(valStr) {
+            if (!valStr) return [0x8b4513, 0x111111, 0xea580c, 0xd4af37];
+            var s = valStr.toUpperCase().replace(/\s+/g, "");
+            var mult = 1;
+            if (s.indexOf("K") !== -1) {
+                mult = 1000;
+                s = s.replace("K", ".");
+            } else if (s.indexOf("M") !== -1) {
+                mult = 1000000;
+                s = s.replace("M", ".");
+            } else if (s.indexOf("R") !== -1) {
+                mult = 1;
+                s = s.replace("R", ".");
+            }
+            var num = parseFloat(s) * mult;
+            if (isNaN(num) || num <= 0) return [0x8b4513, 0x111111, 0xea580c, 0xd4af37];
+
+            var colorTable = [
+                0x111111, 0x8b4513, 0xdc2626, 0xea580c, 0xeab308,
+                0x16a34a, 0x2563eb, 0x7c3aed, 0x6b7280, 0xf8fafc
+            ];
+
+            var exp = Math.floor(Math.log10(num));
+            var norm = num / Math.pow(10, exp);
+            var d1 = Math.floor(norm);
+            var d2 = Math.floor((norm - d1) * 10 + 0.001);
+            var band1 = colorTable[d1] || 0x8b4513;
+            var band2 = colorTable[d2] || 0x111111;
+            var multiplierExp = exp - 1;
+            var band3 = (multiplierExp >= 0 && multiplierExp < colorTable.length) ? colorTable[multiplierExp] : 0xd4af37;
+            var band4 = 0xd4af37;
+            return [band1, band2, band3, band4];
+        }
+
         for (var i = 0; i < elements.length; i++) {
             var elem = elements[i];
             var pkgName = (elem.package || "").toUpperCase();
@@ -4428,21 +4463,117 @@ var Copper3D = (function() {
 
                 compMesh = group;
             }
-            // 2. Small Outline (SOIC / SOP / SSOP / TSSOP)
+            // 2. Small Outline (SOIC / SOP / SSOP / TSSOP) with discrete Gull-Wing leads
             else if (pkgName.indexOf("SOIC") !== -1 || pkgName.indexOf("SOP") !== -1 || pkgName.indexOf("SO") === 0) {
                 var group = new THREE.Group();
-                var width = 4.2, length = 6.5, height = 1.4;
+                var pins = 8;
+                var match = pkgName.match(/\d+/);
+                if (match) pins = parseInt(match[0]);
+                var pitch = (pkgName.indexOf("TSSOP") !== -1) ? 0.65 : 1.27;
+                var pinsPerSide = Math.max(Math.floor(pins / 2), 4);
+                var length = pinsPerSide * pitch + 0.8;
+                var width = 4.2;
+                var height = 1.4;
+
                 var body = new THREE.Mesh(new THREE.BoxGeometry(width, length, height), icBodyMat);
                 body.position.z = height / 2;
                 body.castShadow = true;
                 group.add(body);
 
-                // Silver Leads along sides
-                for (var side = -1; side <= 1; side += 2) {
-                    var lead = new THREE.Mesh(new THREE.BoxGeometry(0.8, length * 0.9, 0.2), pinLeadMat);
-                    lead.position.set(side * (width / 2 + 0.4), 0, 0.1);
-                    group.add(lead);
+                // Pin 1 Index Dot
+                var dot = new THREE.Mesh(new THREE.CircleGeometry(0.35, 12), new THREE.MeshBasicMaterial({ color: 0x666666 }));
+                dot.position.set(-width / 2 + 0.8, length / 2 - 0.8, height + 0.01);
+                group.add(dot);
+
+                // Discrete Gull-Wing Silver Leads
+                for (var p = 0; p < pinsPerSide; p++) {
+                    var yPos = (p - (pinsPerSide - 1) / 2) * pitch;
+                    for (var side = -1; side <= 1; side += 2) {
+                        var lead = new THREE.Mesh(new THREE.BoxGeometry(0.9, pitch * 0.45, 0.18), pinLeadMat);
+                        lead.position.set(side * (width / 2 + 0.45), yPos, 0.09);
+                        group.add(lead);
+                    }
                 }
+                compMesh = group;
+            }
+            // Axial Through-Hole Resistors (0204, 0207, AXIAL) with real color bands
+            else if (ref.indexOf("R") === 0 && (pkgName.indexOf("0204") !== -1 || pkgName.indexOf("0207") !== -1 || pkgName.indexOf("AXIAL") !== -1 || (!pkgName.match(/0402|0603|0805|1206/) && pkgName.indexOf("/") !== -1))) {
+                var group = new THREE.Group();
+                var bands = getResistorColorBands(val);
+                var bodyLen = 6.2;
+                var bodyRadius = 1.2;
+
+                var bodyMat = new THREE.MeshStandardMaterial({ color: 0xd9b88c, roughness: 0.6 });
+                var bodyGeom = new THREE.CylinderGeometry(bodyRadius, bodyRadius, bodyLen, 16);
+                bodyGeom.rotateZ(Math.PI / 2);
+                var body = new THREE.Mesh(bodyGeom, bodyMat);
+                body.position.z = bodyRadius + 0.6;
+                body.castShadow = true;
+                group.add(body);
+
+                // 4 Color Bands
+                var bandOffsets = [-1.8, -0.7, 0.4, 1.8];
+                for (var b = 0; b < 4; b++) {
+                    var bandMat = new THREE.MeshBasicMaterial({ color: bands[b] });
+                    var bandGeom = new THREE.CylinderGeometry(bodyRadius + 0.02, bodyRadius + 0.02, 0.45, 16);
+                    bandGeom.rotateZ(Math.PI / 2);
+                    var bandMesh = new THREE.Mesh(bandGeom, bandMat);
+                    bandMesh.position.set(bandOffsets[b], 0, bodyRadius + 0.6);
+                    group.add(bandMesh);
+                }
+
+                // Curved Wire Leads
+                var leadLen = 10.0;
+                var leadWireGeom = new THREE.CylinderGeometry(0.3, 0.3, leadLen, 8);
+                leadWireGeom.rotateZ(Math.PI / 2);
+                var leadWire = new THREE.Mesh(leadWireGeom, pinLeadMat);
+                leadWire.position.z = bodyRadius + 0.6;
+                group.add(leadWire);
+
+                for (var s = -1; s <= 1; s += 2) {
+                    var vPinGeom = new THREE.CylinderGeometry(0.3, 0.3, bodyRadius + 0.8, 8);
+                    var vPin = new THREE.Mesh(vPinGeom, pinLeadMat);
+                    vPin.position.set(s * (leadLen / 2), 0, (bodyRadius + 0.8) / 2);
+                    group.add(vPin);
+                }
+
+                compMesh = group;
+            }
+            // Axial Diodes (DO-35, DO-41) with silver cathode band
+            else if (ref.indexOf("D") === 0 && (pkgName.indexOf("DO") !== -1 || pkgName.indexOf("SOD") !== -1 || pkgName.indexOf("DIODE") !== -1)) {
+                var group = new THREE.Group();
+                var bodyLen = 5.0;
+                var bodyRadius = 1.1;
+
+                var diodeMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4 });
+                var bodyGeom = new THREE.CylinderGeometry(bodyRadius, bodyRadius, bodyLen, 16);
+                bodyGeom.rotateZ(Math.PI / 2);
+                var body = new THREE.Mesh(bodyGeom, diodeMat);
+                body.position.z = bodyRadius + 0.5;
+                body.castShadow = true;
+                group.add(body);
+
+                var stripeMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.2 });
+                var stripeGeom = new THREE.CylinderGeometry(bodyRadius + 0.02, bodyRadius + 0.02, 0.6, 16);
+                stripeGeom.rotateZ(Math.PI / 2);
+                var stripe = new THREE.Mesh(stripeGeom, stripeMat);
+                stripe.position.set(-1.6, 0, bodyRadius + 0.5);
+                group.add(stripe);
+
+                var leadLen = 9.0;
+                var leadWireGeom = new THREE.CylinderGeometry(0.28, 0.28, leadLen, 8);
+                leadWireGeom.rotateZ(Math.PI / 2);
+                var leadWire = new THREE.Mesh(leadWireGeom, pinLeadMat);
+                leadWire.position.z = bodyRadius + 0.5;
+                group.add(leadWire);
+
+                for (var s = -1; s <= 1; s += 2) {
+                    var vPinGeom = new THREE.CylinderGeometry(0.28, 0.28, bodyRadius + 0.7, 8);
+                    var vPin = new THREE.Mesh(vPinGeom, pinLeadMat);
+                    vPin.position.set(s * (leadLen / 2), 0, (bodyRadius + 0.7) / 2);
+                    group.add(vPin);
+                }
+
                 compMesh = group;
             }
             // 3. Quad Flat Package (QFP / TQFP / QFN)
@@ -4886,6 +5017,32 @@ var CopperTools = (function() {
         document.body.removeChild(link);
     }
 
+    function exportCentroidCSV() {
+        if (!window.EAGLE_DATA || !EAGLE_DATA.board || !EAGLE_DATA.board.elements) return;
+        var elements = EAGLE_DATA.board.elements;
+        var csv = "Designator,Val,Package,Mid X,Mid Y,Rotation,Layer\n";
+
+        for (var i = 0; i < elements.length; i++) {
+            var el = elements[i];
+            var isBottom = (el.rot || "").indexOf("M") !== -1;
+            var layer = isBottom ? "Bottom" : "Top";
+            var rotVal = (parseFloat((el.rot || "0").replace(/[^0-9.-]/g, "")) || 0);
+            csv += `"${el.name}","${el.value || ""}","${el.package || ""}","${el.x.toFixed(3)}","${el.y.toFixed(3)}","${rotVal}","${layer}"\n`;
+        }
+
+        var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        var link = document.createElement("a");
+        var url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", (EAGLE_DATA.name || "circuit") + "_pick_and_place_cpl.csv");
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showNotification("🎯 Archivo Pick & Place (CPL) exportado con éxito.");
+    }
+
     function showNotification(msg) {
         var toast = document.getElementById("copper-toast");
         if (!toast) {
@@ -4909,6 +5066,7 @@ var CopperTools = (function() {
         toggleXRay: toggleXRay,
         renderBOMTable: renderBOMTable,
         exportBOMToCSV: exportBOMToCSV,
+        exportCentroidCSV: exportCentroidCSV,
         showNotification: showNotification
     };
 })();
