@@ -423,6 +423,17 @@ var CopperTools = (function() {
         });
         if (!isFinite(minTrace)) minTrace = 0.254;
 
+        var unroutedWires = [];
+        signals.forEach(function(sig) {
+            if (sig.wires) {
+                sig.wires.forEach(function(w) {
+                    if (w.layer === 19) {
+                        unroutedWires.push({ signal: sig.name, wire: w });
+                    }
+                });
+            }
+        });
+
         content.innerHTML = `
             <div class="drc-stats-grid">
                 <div class="drc-card">
@@ -439,6 +450,15 @@ var CopperTools = (function() {
                     <div class="drc-card-label">Señales & Redes (Nets)</div>
                     <div class="drc-card-val">${signals.length}</div>
                     <div class="drc-card-sub">${wires.length} segmentos ruteados</div>
+                </div>
+                <div class="drc-card ${unroutedWires.length > 0 ? 'drc-card-warn' : ''}">
+                    <div class="drc-card-label">Integridad de Ruteo (Airwires L19)</div>
+                    <div class="drc-card-val" style="color: ${unroutedWires.length > 0 ? '#ffb703' : '#00ffcc'};">
+                        ${unroutedWires.length === 0 ? "100% Ruteado ✓" : unroutedWires.length + " Sin Rutar ⚠️"}
+                    </div>
+                    <div class="drc-card-sub">
+                        ${unroutedWires.length === 0 ? "Sin conexiones abiertas" : "Airwires en: " + unroutedWires.slice(0, 3).map(u => u.signal).join(", ") + (unroutedWires.length > 3 ? "..." : "")}
+                    </div>
                 </div>
                 <div class="drc-card">
                     <div class="drc-card-label">Vías de Interconexión</div>
@@ -457,10 +477,139 @@ var CopperTools = (function() {
                 </div>
             </div>
             <div class="drc-footer-actions">
+                <button class="copper-mini-btn" onclick="CopperTools.exportPCBSVG()" style="background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2);">📐 Exportar SVG</button>
+                <button class="copper-mini-btn" onclick="CopperTools.exportPCBPNG()" style="background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2);">🖼️ Exportar PNG HD</button>
                 <button class="copper-mini-btn" onclick="CopperTools.exportBOMToCSV()" style="background:#00ffcc; color:#000; font-weight:600;">⬇ Descargar BOM CSV</button>
-                <button class="copper-mini-btn" onclick="CopperTools.exportCentroidCSV()" style="background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2);">🎯 Descargar CPL (Pick & Place)</button>
+                <button class="copper-mini-btn" onclick="CopperTools.exportCentroidCSV()" style="background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2);">🎯 Descargar CPL</button>
             </div>
         `;
+    }
+
+    // 6. Vector SVG and High-Res PNG Export
+    function exportPCBSVG() {
+        var svg = document.getElementById("pcbSvg");
+        if (!svg) return;
+        var clone = svg.cloneNode(true);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        clone.removeAttribute("id");
+
+        var viewport = clone.querySelector("#pcbViewport");
+        if (viewport) viewport.removeAttribute("transform");
+
+        var b = (window.EAGLE_DATA && EAGLE_DATA.board) ? EAGLE_DATA.board : null;
+        var bounds = (b && b.bounds) ? b.bounds : { min_x: 0, min_y: 0, width: 100, height: 80 };
+        var pad = 4;
+        var minX = bounds.min_x - pad;
+        var minY = -(bounds.min_y + bounds.height + pad);
+        var w = bounds.width + pad * 2;
+        var h = bounds.height + pad * 2;
+        clone.setAttribute("viewBox", `${minX} ${minY} ${w} ${h}`);
+        clone.setAttribute("width", `${w * 10}px`);
+        clone.setAttribute("height", `${h * 10}px`);
+
+        var styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
+        styleEl.textContent = `
+            svg { background-color: #0b0d13; }
+            .layer-1 { stroke: #c82828; fill: none; }
+            .layer-16 { stroke: #2563eb; fill: none; }
+            .layer-17 { fill: #10b981; stroke: #059669; }
+            .layer-18 { fill: #facc15; stroke: #eab308; }
+            .layer-20 { stroke: #ffffff; fill: none; stroke-width: 0.2; }
+            .layer-21 { stroke: #f8fafc; fill: none; }
+            .layer-22 { stroke: #94a3b8; fill: none; }
+            .layer-19 { stroke: #ffb703; stroke-dasharray: 0.5, 0.5; }
+        `;
+        clone.insertBefore(styleEl, clone.firstChild);
+
+        var serializer = new XMLSerializer();
+        var svgStr = serializer.serializeToString(clone);
+        var blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+        var link = document.createElement("a");
+        var url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", (window.EAGLE_DATA && EAGLE_DATA.name ? EAGLE_DATA.name : "circuit") + "_pcb.svg");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showNotification("📐 Archivo vectorial SVG del PCB exportado.");
+    }
+
+    function exportPCBPNG() {
+        var svg = document.getElementById("pcbSvg");
+        if (!svg) return;
+        var clone = svg.cloneNode(true);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        var viewport = clone.querySelector("#pcbViewport");
+        if (viewport) viewport.removeAttribute("transform");
+
+        var b = (window.EAGLE_DATA && EAGLE_DATA.board) ? EAGLE_DATA.board : null;
+        var bounds = (b && b.bounds) ? b.bounds : { min_x: 0, min_y: 0, width: 100, height: 80 };
+        var pad = 4;
+        var minX = bounds.min_x - pad;
+        var minY = -(bounds.min_y + bounds.height + pad);
+        var w = bounds.width + pad * 2;
+        var h = bounds.height + pad * 2;
+        clone.setAttribute("viewBox", `${minX} ${minY} ${w} ${h}`);
+
+        var scaleFactor = 3;
+        var imgW = Math.round(w * scaleFactor * 8);
+        var imgH = Math.round(h * scaleFactor * 8);
+        clone.setAttribute("width", imgW);
+        clone.setAttribute("height", imgH);
+
+        var styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
+        styleEl.textContent = `
+            svg { background-color: #0b0d13; }
+            .layer-1 { stroke: #c82828; fill: none; }
+            .layer-16 { stroke: #2563eb; fill: none; }
+            .layer-17 { fill: #10b981; stroke: #059669; }
+            .layer-18 { fill: #facc15; stroke: #eab308; }
+            .layer-20 { stroke: #ffffff; fill: none; stroke-width: 0.2; }
+            .layer-21 { stroke: #f8fafc; fill: none; }
+            .layer-22 { stroke: #94a3b8; fill: none; }
+            .layer-19 { stroke: #ffb703; stroke-dasharray: 0.5, 0.5; }
+        `;
+        clone.insertBefore(styleEl, clone.firstChild);
+
+        var serializer = new XMLSerializer();
+        var svgStr = serializer.serializeToString(clone);
+        var img = new Image();
+        var blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+
+        img.onload = function() {
+            var canvas = document.createElement("canvas");
+            canvas.width = imgW;
+            canvas.height = imgH;
+            var ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#0b0d13";
+            ctx.fillRect(0, 0, imgW, imgH);
+            ctx.drawImage(img, 0, 0, imgW, imgH);
+            URL.revokeObjectURL(url);
+
+            canvas.toBlob(function(pBlob) {
+                var pLink = document.createElement("a");
+                pLink.href = URL.createObjectURL(pBlob);
+                pLink.download = (window.EAGLE_DATA && EAGLE_DATA.name ? EAGLE_DATA.name : "circuit") + "_pcb_hd.png";
+                document.body.appendChild(pLink);
+                pLink.click();
+                document.body.removeChild(pLink);
+                showNotification("🖼️ Imagen PNG de alta definición exportada.");
+            }, "image/png");
+        };
+        img.src = url;
+    }
+
+    // 7. Technical Blueprint / White Line Art Mode
+    var blueprintActive = false;
+    function toggleBlueprint(btn) {
+        blueprintActive = !blueprintActive;
+        var pcbSvg = document.getElementById("pcbSvg");
+        if (pcbSvg) {
+            pcbSvg.classList.toggle("copper-blueprint-mode", blueprintActive);
+        }
+        if (btn) btn.classList.toggle("active", blueprintActive);
+        showNotification(blueprintActive ? "📐 Modo Blueprint Técnico activado." : "🎨 Modo CAD Estándar restaurado.");
     }
 
     function showNotification(msg) {
@@ -484,10 +633,13 @@ var CopperTools = (function() {
         handleCaliperClick: handleCaliperClick,
         glowNet: glowNet,
         toggleXRay: toggleXRay,
+        toggleBlueprint: toggleBlueprint,
         renderBOMTable: renderBOMTable,
         filterBOMByCategory: filterBOMByCategory,
         exportBOMToCSV: exportBOMToCSV,
         exportCentroidCSV: exportCentroidCSV,
+        exportPCBSVG: exportPCBSVG,
+        exportPCBPNG: exportPCBPNG,
         showBoardInfoModal: showBoardInfoModal,
         closeBoardInfoModal: closeBoardInfoModal,
         showNotification: showNotification

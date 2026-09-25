@@ -904,6 +904,18 @@ var Copper3D = (function() {
                 controls.target.set(0, 0, 0);
                 controls.update();
             }
+        },
+        exportSnapshot: function() {
+            if (!renderer || !scene || !camera) return;
+            renderer.render(scene, camera);
+            var dataUrl = renderer.domElement.toDataURL("image/png");
+            var link = document.createElement("a");
+            link.href = dataUrl;
+            link.download = ((currentData && currentData.name) ? currentData.name : "circuit") + "_3d_snapshot.png";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            CopperTools.showNotification("📸 Captura 3D exportada con éxito.");
         }
     };
 })();

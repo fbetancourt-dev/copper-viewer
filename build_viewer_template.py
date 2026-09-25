@@ -625,6 +625,39 @@ def build_template():
             font-weight: 600;
             border-color: #00ffcc;
         }
+
+        /* Blueprint / White Line Art Mode */
+        #pcbSvg.copper-blueprint-mode {
+            background-color: #071326 !important;
+            background-image: 
+                radial-gradient(circle, rgba(56, 189, 248, 0.15) 1px, transparent 1px) !important;
+            background-size: 16px 16px !important;
+        }
+        #pcbSvg.copper-blueprint-mode path,
+        #pcbSvg.copper-blueprint-mode line,
+        #pcbSvg.copper-blueprint-mode circle,
+        #pcbSvg.copper-blueprint-mode rect {
+            filter: contrast(130%) brightness(110%);
+        }
+        #pcbSvg.copper-blueprint-mode .layer-1,
+        #pcbSvg.copper-blueprint-mode .layer-16 {
+            stroke: #38bdf8 !important;
+            opacity: 0.9;
+        }
+        #pcbSvg.copper-blueprint-mode .layer-17,
+        #pcbSvg.copper-blueprint-mode .layer-18 {
+            fill: #ffffff !important;
+            stroke: #38bdf8 !important;
+        }
+        #pcbSvg.copper-blueprint-mode .layer-21,
+        #pcbSvg.copper-blueprint-mode .layer-22 {
+            stroke: #ffffff !important;
+            opacity: 0.95;
+        }
+        #pcbSvg.copper-blueprint-mode .layer-20 {
+            stroke: #38bdf8 !important;
+            stroke-width: 0.35px !important;
+        }
     """
 
     # Inject CSS
@@ -662,9 +695,10 @@ def build_template():
     # Insert brand, search bar, and tabs in header
     html = re.sub(r'<h1>.*?</h1>', header_content.strip(), html)
 
-    # 3. Add new tool buttons in toolbar (X-Ray, Caliper, Net Glow, DRC Info)
+    # 3. Add new tool buttons in toolbar (X-Ray, Caliper, Net Glow, DRC Info, Blueprint)
     copper_tool_buttons = """
             <button id="btn-xray" class="copper-mini-btn" onclick="CopperTools.toggleXRay()" title="Modo Rayos X (Mesa de Luz)">💡 Rayos X</button>
+            <button id="btn-blueprint" class="copper-mini-btn" onclick="CopperTools.toggleBlueprint(this)" title="Modo Plano Técnico / Blueprint">📐 Blueprint</button>
             <button id="btn-caliper" class="copper-mini-btn" onclick="CopperTools.toggleCaliper()" title="Medición Caliper punto a punto">📏 Caliper</button>
             <button id="btn-drc-info" class="copper-mini-btn" onclick="CopperTools.showBoardInfoModal()" title="Estadísticas de la placa y reglas de diseño DRC">📊 Info & DRC</button>
     """
@@ -696,6 +730,7 @@ def build_template():
                     <button id="btn-3d-comp" class="copper-mini-btn active" onclick="toggle3DComponents(this)">Chips 3D</button>
                     <button id="btn-3d-floor" class="copper-mini-btn active" onclick="toggle3DFloor(this)">📐 Piso Grid</button>
                     <button id="btn-3d-xray" class="copper-mini-btn" onclick="toggle3DXRay(this)">Rayos X 3D</button>
+                    <button id="btn-3d-snap" class="copper-mini-btn" onclick="Copper3D.exportSnapshot()" title="Exportar Captura 3D en Alta Resolución">📸 Captura</button>
                 </div>
             </div>
         </div>
