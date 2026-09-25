@@ -433,12 +433,47 @@ var Copper3D = (function() {
 
         function toPxBot(x, y) {
             return {
-                x: ((x - minX) / bw) * texDim,
+                x: ((minX + bw - x) / bw) * texDim,
                 y: (1.0 - (y - minY) / bh) * texDim
             };
         }
 
-        // 1. Top Silkscreen Texture (Layers 21, 51)
+        function drawSilkText(ctx, text, pt, fontSize, rotStr, isBottom) {
+            if (!text) return;
+            ctx.save();
+            ctx.translate(pt.x, pt.y);
+
+            var angle = 0;
+            var mirrored = false;
+            if (rotStr) {
+                if (rotStr.indexOf("M") !== -1) mirrored = true;
+                var m = rotStr.match(/R(-?\d+(\.\d+)?)/);
+                if (m) angle = parseFloat(m[1]);
+            }
+
+            if (!isBottom) {
+                if (angle !== 0) {
+                    ctx.rotate(-angle * Math.PI / 180);
+                }
+            } else {
+                if (angle !== 0) {
+                    ctx.rotate(angle * Math.PI / 180);
+                }
+                if (!mirrored) {
+                    ctx.scale(-1, 1);
+                }
+            }
+
+            var lines = ("" + text).split("\n");
+            for (var l = 0; l < lines.length; l++) {
+                ctx.fillText(lines[l], 0, l * fontSize * 1.15);
+            }
+            ctx.restore();
+        }
+
+        // ========================================================
+        // 1. TOP SILKSCREEN (Layers 21: tPlace, 25: tNames, 27: tValues, 51: tDocu)
+        // ========================================================
         var canvasTop = document.createElement("canvas");
         canvasTop.width = texDim;
         canvasTop.height = texDim;
@@ -450,10 +485,10 @@ var Copper3D = (function() {
         ctxTop.lineCap = "round";
         ctxTop.lineJoin = "round";
 
-        // Plain silkscreen lines & text (Top L21)
+        // Plain items (Top)
         for (var i = 0; i < plain.length; i++) {
             var item = plain[i];
-            if (item.layer === 21) {
+            if (item.layer === 21 || item.layer === 25 || item.layer === 27 || item.layer === 51) {
                 if (item.x1 !== undefined && item.x2 !== undefined) {
                     var p1 = toPxTop(item.x1, item.y1);
                     var p2 = toPxTop(item.x2, item.y2);
@@ -463,16 +498,24 @@ var Copper3D = (function() {
                     ctxTop.moveTo(p1.x, p1.y);
                     ctxTop.lineTo(p2.x, p2.y);
                     ctxTop.stroke();
+                } else if (item.radius !== undefined) {
+                    var pt = toPxTop(item.x, item.y);
+                    var rPx = Math.max((item.radius || 0.5) * (texDim / bw), 2.0);
+                    var lw = Math.max((item.width || 0.15) * (texDim / bw), 2.0);
+                    ctxTop.lineWidth = lw;
+                    ctxTop.beginPath();
+                    ctxTop.arc(pt.x, pt.y, rPx, 0, Math.PI * 2);
+                    ctxTop.stroke();
                 } else if (item.text) {
                     var pt = toPxTop(item.x, item.y);
-                    var fontSize = Math.max((item.size || 1.5) * (texDim / bw), 16);
+                    var fontSize = Math.max((item.size || 1.4) * (texDim / bw), 14);
                     ctxTop.font = "bold " + fontSize.toFixed(0) + "px sans-serif";
-                    ctxTop.fillText(item.text, pt.x, pt.y);
+                    drawSilkText(ctxTop, item.text, pt, fontSize, item.rot, false);
                 }
             }
         }
 
-        // Element packages silkscreen (Top L21, L51)
+        // Elements on Top
         for (var e = 0; e < elements.length; e++) {
             var el = elements[e];
             var isBottom = (el.rot || "").indexOf("M") !== -1;
@@ -502,6 +545,22 @@ var Copper3D = (function() {
                 }
             }
 
+            var circles = pkg.circles || [];
+            for (var c = 0; c < circles.length; c++) {
+                var circ = circles[c];
+                if (circ.layer === 21 || circ.layer === 51) {
+                    var cx = el.x + circ.x * Math.cos(eRad) - circ.y * Math.sin(eRad);
+                    var cy = el.y + circ.x * Math.sin(eRad) + circ.y * Math.cos(eRad);
+                    var pt = toPxTop(cx, cy);
+                    var rPx = Math.max((circ.radius || 0.5) * (texDim / bw), 2.0);
+                    var lw = Math.max((circ.width || 0.15) * (texDim / bw), 2.0);
+                    ctxTop.lineWidth = lw;
+                    ctxTop.beginPath();
+                    ctxTop.arc(pt.x, pt.y, rPx, 0, Math.PI * 2);
+                    ctxTop.stroke();
+                }
+            }
+
             // Element Ref Designator text
             if (el.name) {
                 var pt = toPxTop(el.x, el.y);
@@ -518,7 +577,8 @@ var Copper3D = (function() {
             map: topTex,
             transparent: true,
             opacity: 0.95,
-            depthWrite: false
+            depthWrite: false,
+            side: THREE.DoubleSide
         });
 
         var planeTopGeom = new THREE.PlaneGeometry(bw, bh);
@@ -526,7 +586,9 @@ var Copper3D = (function() {
         planeTop.position.set(minX + bw / 2, minY + bh / 2, zTop);
         silkscreenGroup.add(planeTop);
 
-        // 2. Bottom Silkscreen Texture (Layers 22, 52)
+        // ========================================================
+        // 2. BOTTOM SILKSCREEN (Layers 22: bPlace, 26: bNames, 28: bValues, 52: bDocu)
+        // ========================================================
         var canvasBot = document.createElement("canvas");
         canvasBot.width = texDim;
         canvasBot.height = texDim;
@@ -538,9 +600,10 @@ var Copper3D = (function() {
         ctxBot.lineCap = "round";
         ctxBot.lineJoin = "round";
 
+        // Plain items (Bottom)
         for (var i = 0; i < plain.length; i++) {
             var item = plain[i];
-            if (item.layer === 22) {
+            if (item.layer === 22 || item.layer === 26 || item.layer === 28 || item.layer === 52) {
                 if (item.x1 !== undefined && item.x2 !== undefined) {
                     var p1 = toPxBot(item.x1, item.y1);
                     var p2 = toPxBot(item.x2, item.y2);
@@ -550,12 +613,84 @@ var Copper3D = (function() {
                     ctxBot.moveTo(p1.x, p1.y);
                     ctxBot.lineTo(p2.x, p2.y);
                     ctxBot.stroke();
+                } else if (item.radius !== undefined) {
+                    var pt = toPxBot(item.x, item.y);
+                    var rPx = Math.max((item.radius || 0.5) * (texDim / bw), 2.0);
+                    var lw = Math.max((item.width || 0.15) * (texDim / bw), 2.0);
+                    ctxBot.lineWidth = lw;
+                    ctxBot.beginPath();
+                    ctxBot.arc(pt.x, pt.y, rPx, 0, Math.PI * 2);
+                    ctxBot.stroke();
                 } else if (item.text) {
                     var pt = toPxBot(item.x, item.y);
-                    var fontSize = Math.max((item.size || 1.5) * (texDim / bw), 16);
+                    var fontSize = Math.max((item.size || 1.4) * (texDim / bw), 14);
                     ctxBot.font = "bold " + fontSize.toFixed(0) + "px sans-serif";
-                    ctxBot.fillText(item.text, pt.x, pt.y);
+                    drawSilkText(ctxBot, item.text, pt, fontSize, item.rot, true);
                 }
+            }
+        }
+
+        // Elements on Bottom
+        for (var e = 0; e < elements.length; e++) {
+            var el = elements[e];
+            var isBottom = (el.rot || "").indexOf("M") !== -1;
+            if (!isBottom) continue;
+
+            var pkg = packages[el.library + "_" + el.package] || packages[el.package];
+            if (!pkg) continue;
+
+            var eRad = (parseFloat(el.rot.replace(/[^0-9.-]/g, "")) || 0) * Math.PI / 180;
+            var wires = pkg.wires || [];
+            for (var w = 0; w < wires.length; w++) {
+                var wire = wires[w];
+                // Wires in pkg can be 21/51 (mapped to 22/52 when mirrored) or directly 22/52
+                if (wire.layer === 21 || wire.layer === 51 || wire.layer === 22 || wire.layer === 52) {
+                    // Mirrored element: local x is negated
+                    var lx1 = -wire.x1;
+                    var ly1 = wire.y1;
+                    var lx2 = -wire.x2;
+                    var ly2 = wire.y2;
+
+                    var x1 = el.x + lx1 * Math.cos(eRad) - ly1 * Math.sin(eRad);
+                    var y1 = el.y + lx1 * Math.sin(eRad) + ly1 * Math.cos(eRad);
+                    var x2 = el.x + lx2 * Math.cos(eRad) - ly2 * Math.sin(eRad);
+                    var y2 = el.y + lx2 * Math.sin(eRad) + ly2 * Math.cos(eRad);
+
+                    var p1 = toPxBot(x1, y1);
+                    var p2 = toPxBot(x2, y2);
+                    var lw = Math.max((wire.width || 0.15) * (texDim / bw), 2.0);
+                    ctxBot.lineWidth = lw;
+                    ctxBot.beginPath();
+                    ctxBot.moveTo(p1.x, p1.y);
+                    ctxBot.lineTo(p2.x, p2.y);
+                    ctxBot.stroke();
+                }
+            }
+
+            var circles = pkg.circles || [];
+            for (var c = 0; c < circles.length; c++) {
+                var circ = circles[c];
+                if (circ.layer === 21 || circ.layer === 51 || circ.layer === 22 || circ.layer === 52) {
+                    var lcx = -circ.x;
+                    var lcy = circ.y;
+                    var cx = el.x + lcx * Math.cos(eRad) - lcy * Math.sin(eRad);
+                    var cy = el.y + lcx * Math.sin(eRad) + lcy * Math.cos(eRad);
+                    var pt = toPxBot(cx, cy);
+                    var rPx = Math.max((circ.radius || 0.5) * (texDim / bw), 2.0);
+                    var lw = Math.max((circ.width || 0.15) * (texDim / bw), 2.0);
+                    ctxBot.lineWidth = lw;
+                    ctxBot.beginPath();
+                    ctxBot.arc(pt.x, pt.y, rPx, 0, Math.PI * 2);
+                    ctxBot.stroke();
+                }
+            }
+
+            // Element Ref Designator text on bottom
+            if (el.name) {
+                var pt = toPxBot(el.x, el.y);
+                var fontSize = Math.max(1.1 * (texDim / bw), 13);
+                ctxBot.font = "600 " + fontSize.toFixed(0) + "px monospace";
+                drawSilkText(ctxBot, el.name, pt, fontSize, el.rot, true);
             }
         }
 
@@ -566,7 +701,8 @@ var Copper3D = (function() {
             map: botTex,
             transparent: true,
             opacity: 0.95,
-            depthWrite: false
+            depthWrite: false,
+            side: THREE.DoubleSide
         });
 
         var planeBotGeom = new THREE.PlaneGeometry(bw, bh);
