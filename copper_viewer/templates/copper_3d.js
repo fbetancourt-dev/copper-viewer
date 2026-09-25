@@ -9,7 +9,8 @@
 
 var Copper3D = (function() {
     var scene, camera, renderer, controls;
-    var boardGroup, componentsGroup, copperGroup, lightsGroup, floorGroup;
+    var boardGroup, componentsGroup, copperGroup, silkscreenGroup, lightsGroup, floorGroup;
+    var modelRegistry = {};
     var currentData = null;
     var animationId = null;
     var isInitialized = false;
@@ -149,9 +150,11 @@ var Copper3D = (function() {
 
         boardGroup = new THREE.Group();
         copperGroup = new THREE.Group();
+        silkscreenGroup = new THREE.Group();
         componentsGroup = new THREE.Group();
 
         boardGroup.add(copperGroup);
+        boardGroup.add(silkscreenGroup);
         boardGroup.add(componentsGroup);
 
         var bounds = currentData.board.bounds || { min_x: 0, min_y: 0, max_x: 100, max_y: 80, width: 100, height: 80 };
@@ -166,6 +169,9 @@ var Copper3D = (function() {
 
         // Build Copper Traces & Pads
         buildCopperLayers();
+
+        // Build Silkscreen (Layers 21/51 Top, 22/52 Bottom)
+        buildSilkscreen(bounds);
 
         // Build Parametric 3D Components
         buildComponents();
@@ -234,11 +240,8 @@ var Copper3D = (function() {
         var t = settings.thickness;
         var extrudeSettings = {
             depth: t,
-            bevelEnabled: true,
-            bevelSegments: 2,
-            steps: 1,
-            bevelSize: 0.1,
-            bevelThickness: 0.1
+            bevelEnabled: false,
+            steps: 1
         };
 
         var geom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
@@ -287,8 +290,10 @@ var Copper3D = (function() {
         if (!settings.showTraces) return;
 
         var t = settings.thickness;
-        var zTop = t / 2 + 0.02;
-        var zBottom = -t / 2 - 0.02;
+        var zTop = t / 2 + 0.03;
+        var zBottom = -t / 2 - 0.03;
+        var zTopPad = t / 2 + 0.04;
+        var zBottomPad = -t / 2 - 0.04;
 
         var copperMatTop = new THREE.MeshStandardMaterial({
             color: settings.finishColor,
@@ -308,19 +313,19 @@ var Copper3D = (function() {
 
         for (var e = 0; e < elements.length; e++) {
             var elem = elements[e];
-            var pkg = packages[elem.package];
+            var pkg = packages[elem.library + "_" + elem.package] || packages[elem.package];
             if (!pkg) continue;
 
             var eRad = (parseFloat(elem.rot.replace(/[^0-9.-]/g, "")) || 0) * Math.PI / 180;
             var isBottom = elem.rot.indexOf("M") !== -1;
-            var zPad = isBottom ? zBottom : zTop;
+            var zPad = isBottom ? zBottomPad : zTopPad;
 
             // SMD Pads
             var smds = pkg.smds || [];
             for (var m = 0; m < smds.length; m++) {
                 var smd = smds[m];
                 var padGeom = new THREE.BoxGeometry(smd.dx, smd.dy, 0.04);
-                var padMesh = new THREE.Mesh(padGeom, copperMatTop);
+                var padMesh = new THREE.Mesh(padGeom, isBottom ? copperMatBottom : copperMatTop);
 
                 // Local rotation + element rotation
                 var lx = smd.x * Math.cos(eRad) - smd.y * Math.sin(eRad);
@@ -343,17 +348,17 @@ var Copper3D = (function() {
 
                 // Top pad ring
                 var topMesh = new THREE.Mesh(padCyl, copperMatTop);
-                topMesh.position.set(elem.x + lx, elem.y + ly, zTop);
+                topMesh.position.set(elem.x + lx, elem.y + ly, zTopPad);
                 copperGroup.add(topMesh);
 
                 // Bottom pad ring
                 var botMesh = new THREE.Mesh(padCyl, copperMatBottom);
-                botMesh.position.set(elem.x + lx, elem.y + ly, zBottom);
+                botMesh.position.set(elem.x + lx, elem.y + ly, zBottomPad);
                 copperGroup.add(botMesh);
             }
         }
 
-        // 2. Copper Signal Traces
+        // 2. Copper Signal Traces & Polygons
         var signals = currentData.board.signals || [];
         for (var s = 0; s < signals.length; s++) {
             var wires = signals[s].wires || [];
@@ -374,7 +379,201 @@ var Copper3D = (function() {
                 mesh.rotation.z = Math.atan2(dy, dx) - Math.PI / 2;
                 copperGroup.add(mesh);
             }
+
+            // Signal Polygons (Copper Fills / Planes)
+            // Note: In unpoured/unfilled EAGLE files, polygon elements define boundaries.
+            // Rendering them as solid fills obscures all inner traces and pads.
+            // We render the boundary wires with width or outline.
+            var polys = signals[s].polygons || [];
+            for (var py = 0; py < polys.length; py++) {
+                var poly = polys[py];
+                if (!poly.vertices || poly.vertices.length < 2) continue;
+                var polyWidth = Math.max(poly.width || 0.254, 0.2);
+                var pMat = (poly.layer === 16) ? copperMatBottom : copperMatTop;
+                var zPoly = (poly.layer === 16) ? zBottom : zTop;
+
+                for (var vIdx = 0; vIdx < poly.vertices.length; vIdx++) {
+                    var v1 = poly.vertices[vIdx];
+                    var v2 = poly.vertices[(vIdx + 1) % poly.vertices.length];
+                    var pdx = v2.x - v1.x;
+                    var pdy = v2.y - v1.y;
+                    var pLen = Math.sqrt(pdx * pdx + pdy * pdy);
+                    if (pLen < 0.01) continue;
+
+                    var pGeom = new THREE.BoxGeometry(polyWidth, pLen, 0.02);
+                    var pMesh = new THREE.Mesh(pGeom, pMat);
+                    pMesh.position.set((v1.x + v2.x) / 2, (v1.y + v2.y) / 2, zPoly);
+                    pMesh.rotation.z = Math.atan2(pdy, pdx) - Math.PI / 2;
+                    copperGroup.add(pMesh);
+                }
+            }
         }
+    }
+
+    function buildSilkscreen(bounds) {
+        var elements = currentData.board.elements || [];
+        var packages = currentData.board.packages || {};
+        var plain = currentData.board.plain || [];
+        var t = settings.thickness;
+        var zTop = t / 2 + 0.05;
+        var zBottom = -t / 2 - 0.05;
+
+        var bw = bounds.width || 80;
+        var bh = bounds.height || 60;
+        var minX = bounds.min_x || 0;
+        var minY = bounds.min_y || 0;
+        var texDim = 2048;
+
+        function toPxTop(x, y) {
+            return {
+                x: ((x - minX) / bw) * texDim,
+                y: (1.0 - (y - minY) / bh) * texDim
+            };
+        }
+
+        function toPxBot(x, y) {
+            return {
+                x: ((x - minX) / bw) * texDim,
+                y: (1.0 - (y - minY) / bh) * texDim
+            };
+        }
+
+        // 1. Top Silkscreen Texture (Layers 21, 51)
+        var canvasTop = document.createElement("canvas");
+        canvasTop.width = texDim;
+        canvasTop.height = texDim;
+        var ctxTop = canvasTop.getContext("2d");
+        ctxTop.clearRect(0, 0, texDim, texDim);
+
+        ctxTop.strokeStyle = "#ffffff";
+        ctxTop.fillStyle = "#ffffff";
+        ctxTop.lineCap = "round";
+        ctxTop.lineJoin = "round";
+
+        // Plain silkscreen lines & text (Top L21)
+        for (var i = 0; i < plain.length; i++) {
+            var item = plain[i];
+            if (item.layer === 21) {
+                if (item.x1 !== undefined && item.x2 !== undefined) {
+                    var p1 = toPxTop(item.x1, item.y1);
+                    var p2 = toPxTop(item.x2, item.y2);
+                    var lw = Math.max((item.width || 0.15) * (texDim / bw), 2.0);
+                    ctxTop.lineWidth = lw;
+                    ctxTop.beginPath();
+                    ctxTop.moveTo(p1.x, p1.y);
+                    ctxTop.lineTo(p2.x, p2.y);
+                    ctxTop.stroke();
+                } else if (item.text) {
+                    var pt = toPxTop(item.x, item.y);
+                    var fontSize = Math.max((item.size || 1.5) * (texDim / bw), 16);
+                    ctxTop.font = "bold " + fontSize.toFixed(0) + "px sans-serif";
+                    ctxTop.fillText(item.text, pt.x, pt.y);
+                }
+            }
+        }
+
+        // Element packages silkscreen (Top L21, L51)
+        for (var e = 0; e < elements.length; e++) {
+            var el = elements[e];
+            var isBottom = (el.rot || "").indexOf("M") !== -1;
+            if (isBottom) continue;
+
+            var pkg = packages[el.library + "_" + el.package] || packages[el.package];
+            if (!pkg) continue;
+
+            var eRad = (parseFloat(el.rot.replace(/[^0-9.-]/g, "")) || 0) * Math.PI / 180;
+            var wires = pkg.wires || [];
+            for (var w = 0; w < wires.length; w++) {
+                var wire = wires[w];
+                if (wire.layer === 21 || wire.layer === 51) {
+                    var x1 = el.x + wire.x1 * Math.cos(eRad) - wire.y1 * Math.sin(eRad);
+                    var y1 = el.y + wire.x1 * Math.sin(eRad) + wire.y1 * Math.cos(eRad);
+                    var x2 = el.x + wire.x2 * Math.cos(eRad) - wire.y2 * Math.sin(eRad);
+                    var y2 = el.y + wire.x2 * Math.sin(eRad) + wire.y2 * Math.cos(eRad);
+
+                    var p1 = toPxTop(x1, y1);
+                    var p2 = toPxTop(x2, y2);
+                    var lw = Math.max((wire.width || 0.15) * (texDim / bw), 2.0);
+                    ctxTop.lineWidth = lw;
+                    ctxTop.beginPath();
+                    ctxTop.moveTo(p1.x, p1.y);
+                    ctxTop.lineTo(p2.x, p2.y);
+                    ctxTop.stroke();
+                }
+            }
+
+            // Element Ref Designator text
+            if (el.name) {
+                var pt = toPxTop(el.x, el.y);
+                var fontSize = Math.max(1.1 * (texDim / bw), 13);
+                ctxTop.font = "600 " + fontSize.toFixed(0) + "px monospace";
+                ctxTop.fillText(el.name, pt.x - fontSize, pt.y);
+            }
+        }
+
+        var topTex = new THREE.CanvasTexture(canvasTop);
+        topTex.generateMipmaps = true;
+        topTex.minFilter = THREE.LinearMipmapLinearFilter;
+        var topSilkMat = new THREE.MeshBasicMaterial({
+            map: topTex,
+            transparent: true,
+            opacity: 0.95,
+            depthWrite: false
+        });
+
+        var planeTopGeom = new THREE.PlaneGeometry(bw, bh);
+        var planeTop = new THREE.Mesh(planeTopGeom, topSilkMat);
+        planeTop.position.set(minX + bw / 2, minY + bh / 2, zTop);
+        silkscreenGroup.add(planeTop);
+
+        // 2. Bottom Silkscreen Texture (Layers 22, 52)
+        var canvasBot = document.createElement("canvas");
+        canvasBot.width = texDim;
+        canvasBot.height = texDim;
+        var ctxBot = canvasBot.getContext("2d");
+        ctxBot.clearRect(0, 0, texDim, texDim);
+
+        ctxBot.strokeStyle = "#ffffff";
+        ctxBot.fillStyle = "#ffffff";
+        ctxBot.lineCap = "round";
+        ctxBot.lineJoin = "round";
+
+        for (var i = 0; i < plain.length; i++) {
+            var item = plain[i];
+            if (item.layer === 22) {
+                if (item.x1 !== undefined && item.x2 !== undefined) {
+                    var p1 = toPxBot(item.x1, item.y1);
+                    var p2 = toPxBot(item.x2, item.y2);
+                    var lw = Math.max((item.width || 0.15) * (texDim / bw), 2.0);
+                    ctxBot.lineWidth = lw;
+                    ctxBot.beginPath();
+                    ctxBot.moveTo(p1.x, p1.y);
+                    ctxBot.lineTo(p2.x, p2.y);
+                    ctxBot.stroke();
+                } else if (item.text) {
+                    var pt = toPxBot(item.x, item.y);
+                    var fontSize = Math.max((item.size || 1.5) * (texDim / bw), 16);
+                    ctxBot.font = "bold " + fontSize.toFixed(0) + "px sans-serif";
+                    ctxBot.fillText(item.text, pt.x, pt.y);
+                }
+            }
+        }
+
+        var botTex = new THREE.CanvasTexture(canvasBot);
+        botTex.generateMipmaps = true;
+        botTex.minFilter = THREE.LinearMipmapLinearFilter;
+        var botSilkMat = new THREE.MeshBasicMaterial({
+            map: botTex,
+            transparent: true,
+            opacity: 0.95,
+            depthWrite: false
+        });
+
+        var planeBotGeom = new THREE.PlaneGeometry(bw, bh);
+        var planeBot = new THREE.Mesh(planeBotGeom, botSilkMat);
+        planeBot.position.set(minX + bw / 2, minY + bh / 2, zBottom);
+        planeBot.rotation.y = Math.PI;
+        silkscreenGroup.add(planeBot);
     }
 
     function buildComponents() {
@@ -464,8 +663,20 @@ var Copper3D = (function() {
 
             var compMesh = null;
 
-            // 1. Dual In-Line Package (DIP / DIL)
-            if (pkgName.indexOf("DIP") !== -1 || pkgName.indexOf("DIL") !== -1) {
+            // 0. Custom 3D Model Library (EagleUp style)
+            var fullPkgName = (elem.library ? (elem.library + "_" + elem.package) : elem.package).toUpperCase();
+            var customFactory = modelRegistry[pkgName] || modelRegistry[fullPkgName];
+            if (customFactory) {
+                if (typeof customFactory === "function") {
+                    compMesh = customFactory(elem, packages[elem.library + "_" + elem.package] || packages[elem.package]);
+                } else if (customFactory.clone) {
+                    compMesh = customFactory.clone();
+                }
+            }
+
+            if (!compMesh) {
+                // 1. Dual In-Line Package (DIP / DIL)
+                if (pkgName.indexOf("DIP") !== -1 || pkgName.indexOf("DIL") !== -1) {
                 var pins = 8;
                 var match = pkgName.match(/\d+/);
                 if (match) pins = parseInt(match[0]);
@@ -825,6 +1036,7 @@ var Copper3D = (function() {
                 group.add(can);
                 compMesh = group;
             }
+            } // End of if (!compMesh)
 
             // Position & Attach to board
             if (compMesh) {
@@ -916,6 +1128,13 @@ var Copper3D = (function() {
             link.click();
             document.body.removeChild(link);
             CopperTools.showNotification("📸 Captura 3D exportada con éxito.");
+        },
+        registerModel: function(pkgName, factoryOrMesh) {
+            if (!pkgName) return;
+            modelRegistry[pkgName.toUpperCase()] = factoryOrMesh;
+        },
+        getModelRegistry: function() {
+            return modelRegistry;
         }
     };
 })();
