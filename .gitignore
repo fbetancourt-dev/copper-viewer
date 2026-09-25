@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.swp
+*.swo
+*~
+.DS_Store
+*.png
+*.svg
+*.csv
+/tmp/

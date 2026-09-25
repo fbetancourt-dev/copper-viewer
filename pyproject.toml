@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "copper-viewer"
+version = "2.0.0"
+description = "Next-generation Autodesk & CadSoft EAGLE CAD, Gerber and PCB interactive viewer inspired by Copper Touch for iPad."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Francisco Betancourt & Antigravity (Sam)", email = "fbetancourt@example.com" }
+]
+keywords = ["eagle", "pcb", "cad", "hardware", "viewer", "threejs", "webgl", "schematic", "bom", "eda", "copper"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)"
+]
+
+[project.scripts]
+copper-viewer = "copper_viewer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["copper_viewer*"]
